@@ -76,22 +76,8 @@
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.1.0</version>
                 <configuration>
-                    <mainClass>com.example.opensearch.OpenSearchStreamingApp</mainClass>
+                    <mainClass>com.streaming.opensearch.app.ReadOnlyConsumerApp</mainClass>
                 </configuration>
-                <executions>
-                    <execution>
-                        <id>producer</id>
-                        <configuration>
-                            <mainClass>com.example.opensearch.ProducerApp</mainClass>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>consumer</id>
-                        <configuration>
-                            <mainClass>com.example.opensearch.ConsumerApp</mainClass>
-                        </configuration>
-                    </execution>
-                </executions>
             </plugin>
         </plugins>
     </build>

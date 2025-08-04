@@ -1,54 +1,46 @@
-package com.example.opensearch;
+package com.streaming.opensearch.app;
 
-import com.example.opensearch.consumer.EventConsumer;
-import com.example.opensearch.producer.EventProducer;
+import com.streaming.opensearch.producer.EventProducer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Scanner;
 
 /**
- * Main application class that runs both producer and consumer
+ * Standalone Producer Application
+ * Continuously generates and indexes events to OpenSearch
  */
-public class OpenSearchStreamingApp {
-    private static final Logger logger = LoggerFactory.getLogger(OpenSearchStreamingApp.class);
+public class ProducerApp {
+    private static final Logger logger = LoggerFactory.getLogger(ProducerApp.class);
     
     private static final String DEFAULT_INDEX_NAME = "events";
     
     public static void main(String[] args) {
         String indexName = args.length > 0 ? args[0] : DEFAULT_INDEX_NAME;
         
-        logger.info("Starting OpenSearch Streaming Application with index: {}", indexName);
+        logger.info("Starting OpenSearch Event Producer with index: {}", indexName);
         
         EventProducer producer = null;
-        EventConsumer consumer = null;
         
         try {
-            // Create producer and consumer
+            // Create and start producer
             producer = new EventProducer(indexName);
-            consumer = new EventConsumer(indexName);
-            
-            // Start both producer and consumer
             producer.start();
-            consumer.start();
             
             // Setup shutdown hook
             final EventProducer finalProducer = producer;
-            final EventConsumer finalConsumer = consumer;
-            
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                logger.info("Shutting down application...");
+                logger.info("Shutting down producer...");
                 finalProducer.close();
-                finalConsumer.close();
-                logger.info("Application shutdown complete");
+                logger.info("Producer shutdown complete");
             }));
             
             // Start monitoring thread
-            startMonitoringThread(producer, consumer);
+            startMonitoringThread(producer);
             
             // Wait for user input to stop
-            logger.info("Application started successfully!");
-            logger.info("Press 'q' and Enter to quit, 's' and Enter for status");
+            logger.info("Producer started successfully!");
+            logger.info("Press 'q' and Enter to quit, 's' and Enter for status, 'h' for help");
             
             try (Scanner scanner = new Scanner(System.in)) {
                 String input;
@@ -60,7 +52,7 @@ public class OpenSearchStreamingApp {
                         logger.info("Quit command received");
                         break;
                     } else if ("s".equals(input) || "status".equals(input)) {
-                        printStatus(producer, consumer);
+                        printStatus(producer);
                     } else if ("h".equals(input) || "help".equals(input)) {
                         printHelp();
                     } else {
@@ -70,24 +62,21 @@ public class OpenSearchStreamingApp {
             }
             
         } catch (Exception e) {
-            logger.error("Error running application", e);
+            logger.error("Error running producer application", e);
         } finally {
             // Cleanup
             if (producer != null) {
                 producer.close();
             }
-            if (consumer != null) {
-                consumer.close();
-            }
         }
     }
     
-    private static void startMonitoringThread(EventProducer producer, EventConsumer consumer) {
+    private static void startMonitoringThread(EventProducer producer) {
         Thread monitoringThread = new Thread(() -> {
-            while (producer.isRunning() || consumer.isRunning()) {
+            while (producer.isRunning()) {
                 try {
                     Thread.sleep(30000); // Print status every 30 seconds
-                    printStatus(producer, consumer);
+                    printStatus(producer);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     break;
@@ -95,25 +84,23 @@ public class OpenSearchStreamingApp {
             }
         });
         
-        monitoringThread.setName("MonitoringThread");
+        monitoringThread.setName("ProducerMonitoringThread");
         monitoringThread.setDaemon(true);
         monitoringThread.start();
     }
     
-    private static void printStatus(EventProducer producer, EventConsumer consumer) {
-        logger.info("=== STATUS ===");
-        logger.info("Producer - Running: {}, Events Produced: {}", 
+    private static void printStatus(EventProducer producer) {
+        logger.info("=== PRODUCER STATUS ===");
+        logger.info("Running: {}, Events Produced: {}", 
             producer.isRunning(), producer.getEventCount());
-        logger.info("Consumer - Running: {}, Events Processed: {}, Cache Size: {}", 
-            consumer.isRunning(), consumer.getProcessedCount(), consumer.getProcessedEventsCacheSize());
-        logger.info("=============");
+        logger.info("=======================");
     }
     
     private static void printHelp() {
-        logger.info("=== COMMANDS ===");
-        logger.info("q, quit - Quit the application");
+        logger.info("=== PRODUCER COMMANDS ===");
+        logger.info("q, quit - Quit the producer");
         logger.info("s, status - Show current status");
         logger.info("h, help - Show this help message");
-        logger.info("================");
+        logger.info("=========================");
     }
 }

@@ -1,4 +1,4 @@
-package com.example.opensearch.config;
+package com.streaming.opensearch.config;
 
 import org.apache.http.HttpHost;
 import org.apache.http.auth.AuthScope;
@@ -20,7 +20,7 @@ public class OpenSearchConfig {
     private static final Logger logger = LoggerFactory.getLogger(OpenSearchConfig.class);
     
     private static final String DEFAULT_HOST = "localhost";
-    private static final int DEFAULT_PORT = 9200;   
+    private static final int DEFAULT_PORT = 9200;
     private static final String DEFAULT_SCHEME = "http";
     
     public static OpenSearchClient createClient() {

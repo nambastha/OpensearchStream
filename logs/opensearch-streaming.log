@@ -1,0 +1,23 @@
+2025-08-04 16:22:28.843 [main] INFO  com.example.opensearch.ProducerApp - Starting OpenSearch Event Producer with index: events
+2025-08-04 16:22:28.846 [main] INFO  c.e.o.config.OpenSearchConfig - Connecting to OpenSearch at http://100.75.43.7:30920
+2025-08-04 16:22:29.017 [main] INFO  c.e.o.producer.EventProducer - Index events already exists
+2025-08-04 16:22:29.017 [main] INFO  c.e.o.producer.EventProducer - Starting event producer for index: events
+2025-08-04 16:22:29.018 [main] INFO  com.example.opensearch.ProducerApp - Producer started successfully!
+2025-08-04 16:22:29.018 [main] INFO  com.example.opensearch.ProducerApp - Press 'q' and Enter to quit, 's' and Enter for status, 'h' for help
+2025-08-04 16:22:59.022 [ProducerMonitoringThread] INFO  com.example.opensearch.ProducerApp - === PRODUCER STATUS ===
+2025-08-04 16:22:59.023 [ProducerMonitoringThread] INFO  com.example.opensearch.ProducerApp - Running: true, Events Produced: 24
+2025-08-04 16:22:59.023 [ProducerMonitoringThread] INFO  com.example.opensearch.ProducerApp - =======================
+2025-08-04 16:23:29.028 [ProducerMonitoringThread] INFO  com.example.opensearch.ProducerApp - === PRODUCER STATUS ===
+2025-08-04 16:23:29.029 [ProducerMonitoringThread] INFO  com.example.opensearch.ProducerApp - Running: true, Events Produced: 52
+2025-08-04 16:23:29.029 [ProducerMonitoringThread] INFO  com.example.opensearch.ProducerApp - =======================
+2025-08-04 16:23:59.013 [ProducerMonitoringThread] INFO  com.example.opensearch.ProducerApp - === PRODUCER STATUS ===
+2025-08-04 16:23:59.014 [ProducerMonitoringThread] INFO  com.example.opensearch.ProducerApp - Running: true, Events Produced: 78
+2025-08-04 16:23:59.014 [ProducerMonitoringThread] INFO  com.example.opensearch.ProducerApp - =======================
+2025-08-04 16:24:15.587 [main] INFO  com.example.opensearch.ProducerApp - Quit command received
+2025-08-04 16:24:15.587 [main] INFO  c.e.o.producer.EventProducer - Stopping event producer
+2025-08-04 16:24:15.588 [main] INFO  c.e.o.config.OpenSearchConfig - OpenSearch client closed successfully
+2025-08-04 16:24:15.631 [EventProducer-events] INFO  c.e.o.producer.EventProducer - Event producer stopped. Total events produced: 90
+2025-08-04 16:24:15.631 [Thread-1] INFO  com.example.opensearch.ProducerApp - Shutting down producer...
+2025-08-04 16:24:15.632 [Thread-1] INFO  c.e.o.producer.EventProducer - Stopping event producer
+2025-08-04 16:24:15.632 [Thread-1] INFO  c.e.o.config.OpenSearchConfig - OpenSearch client closed successfully
+2025-08-04 16:24:15.632 [Thread-1] INFO  com.example.opensearch.ProducerApp - Producer shutdown complete

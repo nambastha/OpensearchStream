@@ -1,15 +1,16 @@
 # OpenSearch Streaming Application
 
-A Java application that demonstrates continuous data streaming with OpenSearch, featuring a producer that generates events and a consumer that processes them without duplicates.
+A Java application that demonstrates continuous data streaming with OpenSearch, featuring a producer that generates events and a read-only consumer that processes them without duplicates using file-based persistence.
 
 ## Features
 
 - **Event Producer**: Continuously generates and indexes events to OpenSearch
-- **Event Consumer**: Continuously reads and processes events from OpenSearch
-- **Duplicate Prevention**: Consumer tracks processed events to avoid reprocessing
+- **Read-Only Consumer**: Processes events without writing to OpenSearch (safe for shared environments)
+- **File-Based Duplicate Prevention**: Uses local files to track processed events
 - **Configurable**: Supports environment variables for OpenSearch connection
 - **Monitoring**: Built-in status monitoring and logging
 - **Graceful Shutdown**: Proper cleanup on application termination
+- **Multi-Team Safe**: Never modifies source data or creates new indices
 
 ## Prerequisites
 
@@ -43,46 +44,48 @@ kubectl port-forward service/opensearch-service 9200:9200
 
 2. **Run applications:**
 
-   **Combined Producer + Consumer (original):**
-   ```bash
-   mvn exec:java
-   ```
-
    **Producer only:**
    ```bash
-   mvn exec:java@producer
+   mvn exec:java -Dexec.mainClass="com.streaming.opensearch.app.ProducerApp"
    ```
 
-   **Consumer only:**
+   **Read-Only Consumer (recommended for shared environments):**
    ```bash
-   mvn exec:java@consumer
+   mvn exec:java
+   # or explicitly
+   mvn exec:java -Dexec.mainClass="com.streaming.opensearch.app.ReadOnlyConsumerApp"
    ```
 
    **With custom index name:**
    ```bash
-   mvn exec:java@producer -Dexec.args="my-custom-index"
-   mvn exec:java@consumer -Dexec.args="my-custom-index"
+   mvn exec:java -Dexec.mainClass="com.streaming.opensearch.app.ProducerApp" -Dexec.args="my-custom-index"
+   mvn exec:java -Dexec.mainClass="com.streaming.opensearch.app.ReadOnlyConsumerApp" -Dexec.args="my-custom-index"
    ```
 
 3. **Package as JAR:**
    ```bash
    mvn clean package
-   # Run combined app
-   java -jar target/opensearch-streaming-1.0-SNAPSHOT.jar
    # Run producer only
-   java -cp target/opensearch-streaming-1.0-SNAPSHOT.jar com.example.opensearch.ProducerApp
-   # Run consumer only
-   java -cp target/opensearch-streaming-1.0-SNAPSHOT.jar com.example.opensearch.ConsumerApp
+   java -cp target/opensearch-streaming-1.0-SNAPSHOT.jar com.streaming.opensearch.app.ProducerApp
+   # Run read-only consumer only
+   java -cp target/opensearch-streaming-1.0-SNAPSHOT.jar com.streaming.opensearch.app.ReadOnlyConsumerApp
    ```
 
 ## Usage
 
-Once running, the application will:
+Once running:
 
+**Producer will:**
 1. Create an OpenSearch index (default: "events") if it doesn't exist
-2. Start the producer to generate random events
-3. Start the consumer to process events
-4. Display periodic status updates
+2. Continuously generate and index random events
+3. Display periodic status updates
+
+**Read-Only Consumer will:**
+1. Read events from the existing OpenSearch index
+2. Process events without modifying the source data
+3. Track processed events using local files (processed_events_<index>.txt)
+4. Maintain checkpoint for recovery (checkpoint_<index>.txt)
+5. Display periodic status updates
 
 ### Interactive Commands
 

@@ -1,7 +1,7 @@
-package com.example.opensearch.producer;
+package com.streaming.opensearch.producer;
 
-import com.example.opensearch.config.OpenSearchConfig;
-import com.example.opensearch.model.Event;
+import com.streaming.opensearch.config.OpenSearchConfig;
+import com.streaming.opensearch.model.Event;
 import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.opensearch._types.OpenSearchException;
 import org.opensearch.client.opensearch.core.IndexRequest;

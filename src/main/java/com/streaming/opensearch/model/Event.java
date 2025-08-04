@@ -1,4 +1,4 @@
-package com.example.opensearch.model;
+package com.streaming.opensearch.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
