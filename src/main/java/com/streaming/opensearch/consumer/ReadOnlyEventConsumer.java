@@ -291,4 +291,40 @@ public class ReadOnlyEventConsumer {
     public String getLastProcessedTimestamp() {
         return lastProcessedTimestamp;
     }
+    
+    /**
+     * Main method to test ReadOnlyEventConsumer standalone
+     */
+    public static void main(String[] args) {
+        String indexName = args.length > 0 ? args[0] : "events";
+        
+        logger.info("Testing ReadOnlyEventConsumer with index: {}", indexName);
+        
+        ReadOnlyEventConsumer consumer = null;
+        try {
+            consumer = new ReadOnlyEventConsumer(indexName);
+            
+            logger.info("Consumer initialized:");
+            logger.info("- Tracking file: {}", consumer.getTrackingFilePath());
+            logger.info("- Checkpoint file: {}", consumer.getCheckpointFilePath());
+            logger.info("- Last processed timestamp: {}", consumer.getLastProcessedTimestamp());
+            logger.info("- Cached processed events: {}", consumer.getProcessedEventsCacheSize());
+            
+            consumer.start();
+            
+            // Run for 60 seconds
+            logger.info("Consumer will run for 60 seconds...");
+            Thread.sleep(60000);
+            
+            consumer.stop();
+            logger.info("ReadOnlyEventConsumer test completed. Total events processed: {}", consumer.getProcessedCount());
+            
+        } catch (Exception e) {
+            logger.error("Error testing ReadOnlyEventConsumer: {}", e.getMessage(), e);
+        } finally {
+            if (consumer != null) {
+                consumer.close();
+            }
+        }
+    }
 }

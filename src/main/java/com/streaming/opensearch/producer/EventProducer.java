@@ -177,4 +177,33 @@ public class EventProducer {
     public boolean isRunning() {
         return running;
     }
+    
+    /**
+     * Main method to test EventProducer standalone
+     */
+    public static void main(String[] args) {
+        String indexName = args.length > 0 ? args[0] : "test-events";
+        
+        logger.info("Testing EventProducer with index: {}", indexName);
+        
+        EventProducer producer = null;
+        try {
+            producer = new EventProducer(indexName);
+            producer.start();
+            
+            // Run for 30 seconds
+            logger.info("Producer will run for 30 seconds...");
+            Thread.sleep(30000);
+            
+            producer.stop();
+            logger.info("EventProducer test completed. Total events produced: {}", producer.getEventCount());
+            
+        } catch (Exception e) {
+            logger.error("Error testing EventProducer: {}", e.getMessage(), e);
+        } finally {
+            if (producer != null) {
+                producer.close();
+            }
+        }
+    }
 }

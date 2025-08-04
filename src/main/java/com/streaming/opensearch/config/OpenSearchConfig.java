@@ -80,4 +80,31 @@ public class OpenSearchConfig {
             logger.error("Error closing OpenSearch client", e);
         }
     }
+    
+    /**
+     * Main method to test OpenSearch connection
+     */
+    public static void main(String[] args) {
+        logger.info("Testing OpenSearch connection...");
+        
+        OpenSearchClient client = null;
+        try {
+            // Create client
+            client = createClient();
+            
+            // Test connection by getting cluster info
+            var info = client.info();
+            logger.info("Successfully connected to OpenSearch!");
+            logger.info("Cluster name: {}", info.clusterName());
+            logger.info("Version: {}", info.version().number());
+            
+        } catch (Exception e) {
+            logger.error("Failed to connect to OpenSearch: {}", e.getMessage());
+            System.exit(1);
+        } finally {
+            closeClient(client);
+        }
+        
+        logger.info("Connection test completed successfully!");
+    }
 }

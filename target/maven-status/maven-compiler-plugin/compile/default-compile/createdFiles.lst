@@ -1,0 +1,6 @@
+com/streaming/opensearch/consumer/ReadOnlyEventConsumer.class
+com/streaming/opensearch/model/Event.class
+com/streaming/opensearch/config/OpenSearchConfig.class
+com/streaming/opensearch/app/ReadOnlyConsumerApp.class
+com/streaming/opensearch/app/ProducerApp.class
+com/streaming/opensearch/producer/EventProducer.class
