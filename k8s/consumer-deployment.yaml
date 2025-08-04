@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: consumer-offset-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: standard # Use your cluster's storage class
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opensearch-consumer
+  labels:
+    app: opensearch-consumer
+spec:
+  replicas: 1 # Single replica to avoid offset conflicts
+  selector:
+    matchLabels:
+      app: opensearch-consumer
+  template:
+    metadata:
+      labels:
+        app: opensearch-consumer
+    spec:
+      containers:
+      - name: consumer
+        image: your-registry/opensearch-consumer:latest
+        env:
+        - name: OPENSEARCH_HOST
+          value: "localhost                                       "
+        - name: OPENSEARCH_PORT
+          value: "9200"
+        - name: OPENSEARCH_SCHEME
+          value: "http"
+        - name: INDEX_NAME
+          value: "events"
+        - name: OFFSET_STORAGE_PATH
+          value: "/app/offsets"
+        volumeMounts:
+        - name: offset-storage
+          mountPath: /app/offsets
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: offset-storage
+        persistentVolumeClaim:
+          claimName: consumer-offset-storage
+      restartPolicy: Always

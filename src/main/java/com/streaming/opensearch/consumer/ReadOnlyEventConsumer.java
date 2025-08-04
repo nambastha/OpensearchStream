@@ -43,14 +43,30 @@ public class ReadOnlyEventConsumer {
     private static final int MAX_MEMORY_CACHE = 10000;
 
     public ReadOnlyEventConsumer(String sourceIndexName) {
+        this(sourceIndexName, null);
+    }
+    
+    public ReadOnlyEventConsumer(String sourceIndexName, String offsetStoragePath) {
         this.client = OpenSearchConfig.createClient();
         this.sourceIndexName = sourceIndexName;
-        this.trackingFilePath = "processed_events_" + sourceIndexName + ".txt";
-        this.checkpointFilePath = "checkpoint_" + sourceIndexName + ".txt";
+        
+        // Support configurable storage path for Kubernetes PVC mounting
+        String basePath = offsetStoragePath != null ? offsetStoragePath : 
+            System.getenv().getOrDefault("OFFSET_STORAGE_PATH", ".");
+        
+        this.trackingFilePath = basePath + "/processed_events_" + sourceIndexName + ".txt";
+        this.checkpointFilePath = basePath + "/checkpoint_" + sourceIndexName + ".txt";
         this.processedEventIds = new HashSet<>();
         this.processedCount = new AtomicLong(0);
         this.running = false;
         this.lastProcessedTimestamp = "1970-01-01T00:00:00Z";
+        
+        // Ensure offset storage directory exists
+        try {
+            Files.createDirectories(Paths.get(basePath));
+        } catch (IOException e) {
+            logger.warn("Could not create offset storage directory: {}", e.getMessage());
+        }
         
         // Load previously processed events from file
         loadProcessedEventsFromFile();
