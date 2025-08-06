@@ -31,7 +31,7 @@ spec:
         image: your-registry/opensearch-consumer:latest
         env:
         - name: OPENSEARCH_HOST
-          value: "localhost                                       "
+          value: "localhost"
         - name: OPENSEARCH_PORT
           value: "9200"
         - name: OPENSEARCH_SCHEME

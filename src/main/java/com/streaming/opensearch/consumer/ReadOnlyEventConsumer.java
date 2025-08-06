@@ -41,6 +41,10 @@ public class ReadOnlyEventConsumer {
     private static final int BATCH_SIZE = 50;
     private static final long POLL_INTERVAL_MS = 2000;
     private static final int MAX_MEMORY_CACHE = 10000;
+    private static final long CLEANUP_INTERVAL_DAYS = 7;
+    private static final long CLEANUP_INTERVAL_MS = CLEANUP_INTERVAL_DAYS * 24 * 60 * 60 * 1000;
+    private static final int MAX_TRACKING_FILE_LINES = 50000; // Limit tracking file size
+    private static final long DISASTER_RECOVERY_HOURS = 24;   // Look back 24 hours on file loss
 
     public ReadOnlyEventConsumer(String sourceIndexName) {
         this(sourceIndexName, null);
@@ -71,8 +75,15 @@ public class ReadOnlyEventConsumer {
         // Load previously processed events from file
         loadProcessedEventsFromFile();
         loadCheckpointFromFile();
+        
+        // Check if cleanup is needed
+        checkAndCleanupOldFiles();
     }
 
+    /**
+     * Load processed events from file with memory optimization
+     * Only loads recent events to prevent memory issues with large files
+     */
     private void loadProcessedEventsFromFile() {
         Path filePath = Paths.get(trackingFilePath);
         if (!Files.exists(filePath)) {
@@ -82,18 +93,37 @@ public class ReadOnlyEventConsumer {
         
         try {
             List<String> lines = Files.readAllLines(filePath);
-            processedEventIds.addAll(lines);
-            logger.info("Loaded {} processed event IDs from file: {}", 
-                processedEventIds.size(), trackingFilePath);
+            
+            // Memory optimization: Only load recent events if file is large
+            if (lines.size() > MAX_TRACKING_FILE_LINES) {
+                logger.warn("Tracking file has {} lines, loading only recent {} events for memory efficiency", 
+                    lines.size(), MAX_TRACKING_FILE_LINES);
+                
+                int startIndex = lines.size() - MAX_TRACKING_FILE_LINES;
+                processedEventIds.addAll(lines.subList(startIndex, lines.size()));
+                
+                logger.info("Loaded {} recent processed event IDs from large file: {}", 
+                    processedEventIds.size(), trackingFilePath);
+            } else {
+                processedEventIds.addAll(lines);
+                logger.info("Loaded {} processed event IDs from file: {}", 
+                    processedEventIds.size(), trackingFilePath);
+            }
+            
         } catch (IOException e) {
             logger.warn("Could not load processed events from file: {}", e.getMessage());
         }
     }
 
+    /**
+     * Load checkpoint from file with disaster recovery fallback
+     * If checkpoint is missing, attempts intelligent recovery based on tracking file
+     */
     private void loadCheckpointFromFile() {
         Path filePath = Paths.get(checkpointFilePath);
         if (!Files.exists(filePath)) {
-            logger.info("No checkpoint file found. Starting from epoch.");
+            logger.warn("No checkpoint file found. Attempting disaster recovery...");
+            attemptDisasterRecovery();
             return;
         }
         
@@ -102,10 +132,89 @@ public class ReadOnlyEventConsumer {
             if (!lines.isEmpty()) {
                 lastProcessedTimestamp = lines.get(0).trim();
                 logger.info("Loaded checkpoint timestamp: {}", lastProcessedTimestamp);
+            } else {
+                logger.warn("Checkpoint file is empty. Attempting disaster recovery...");
+                attemptDisasterRecovery();
             }
         } catch (IOException e) {
-            logger.warn("Could not load checkpoint from file: {}", e.getMessage());
+            logger.warn("Could not load checkpoint from file: {}. Attempting disaster recovery...", e.getMessage());
+            attemptDisasterRecovery();
         }
+    }
+    
+    /**
+     * Disaster recovery when checkpoint file is lost
+     * Uses intelligent fallback strategies to minimize reprocessing
+     */
+    private void attemptDisasterRecovery() {
+        logger.info("=== DISASTER RECOVERY MODE ===");
+        
+        // Strategy 1: Check for archived checkpoint files
+        String recoveredTimestamp = tryRecoverFromArchives();
+        if (recoveredTimestamp != null) {
+            lastProcessedTimestamp = recoveredTimestamp;
+            logger.info("✅ Recovered checkpoint from archive: {}", lastProcessedTimestamp);
+            return;
+        }
+        
+        // Strategy 2: Use recent timestamp (24 hours ago) to minimize reprocessing
+        String safeTimestamp = calculateSafeRecoveryTimestamp();
+        lastProcessedTimestamp = safeTimestamp;
+        logger.warn("⚠️  Using safe recovery timestamp ({}h ago): {}", 
+            DISASTER_RECOVERY_HOURS, lastProcessedTimestamp);
+        logger.warn("⚠️  This may cause reprocessing of events from the last {} hours", 
+            DISASTER_RECOVERY_HOURS);
+        
+        // Save the recovery timestamp as new checkpoint
+        saveCheckpointToFile(lastProcessedTimestamp);
+        logger.info("💾 Saved recovery checkpoint for future use");
+    }
+    
+    /**
+     * Try to recover checkpoint from archived files
+     */
+    private String tryRecoverFromArchives() {
+        try {
+            String baseFileName = checkpointFilePath.replace(".txt", "_archived_");
+            Path parentDir = Paths.get(checkpointFilePath).getParent();
+            if (parentDir == null) parentDir = Paths.get(".");
+            
+            // Look for archived checkpoint files
+            List<Path> archiveFiles = Files.list(parentDir)
+                .filter(path -> path.getFileName().toString().startsWith(
+                    Paths.get(baseFileName).getFileName().toString()))
+                .sorted((p1, p2) -> {
+                    try {
+                        return Files.getLastModifiedTime(p2).compareTo(Files.getLastModifiedTime(p1));
+                    } catch (IOException e) {
+                        return 0;
+                    }
+                })
+                .collect(Collectors.toList());
+            
+            if (!archiveFiles.isEmpty()) {
+                Path latestArchive = archiveFiles.get(0);
+                List<String> lines = Files.readAllLines(latestArchive);
+                if (!lines.isEmpty()) {
+                    logger.info("Found archived checkpoint: {}", latestArchive);
+                    return lines.get(0).trim();
+                }
+            }
+            
+        } catch (Exception e) {
+            logger.debug("Could not recover from archives: {}", e.getMessage());
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Calculate a safe recovery timestamp (24 hours ago)
+     * This minimizes reprocessing while ensuring no events are missed
+     */
+    private String calculateSafeRecoveryTimestamp() {
+        long recoveryTimeMs = System.currentTimeMillis() - (DISASTER_RECOVERY_HOURS * 60 * 60 * 1000);
+        return java.time.Instant.ofEpochMilli(recoveryTimeMs).toString();
     }
 
     private void saveProcessedEventToFile(String eventId) {
@@ -306,6 +415,92 @@ public class ReadOnlyEventConsumer {
 
     public String getLastProcessedTimestamp() {
         return lastProcessedTimestamp;
+    }
+    
+    /**
+     * Check if tracking file is older than 7 days and cleanup if needed
+     */
+    private void checkAndCleanupOldFiles() {
+        try {
+            Path trackingFile = Paths.get(trackingFilePath);
+            if (!Files.exists(trackingFile)) {
+                return; // No file to cleanup
+            }
+            
+            long fileAge = System.currentTimeMillis() - Files.getLastModifiedTime(trackingFile).toMillis();
+            
+            if (fileAge > CLEANUP_INTERVAL_MS) {
+                logger.info("Tracking file is {} days old, performing cleanup", fileAge / (24 * 60 * 60 * 1000));
+                cleanupTrackingFile();
+            } else {
+                logger.debug("Tracking file is {} days old, no cleanup needed", fileAge / (24 * 60 * 60 * 1000));
+            }
+            
+        } catch (Exception e) {
+            logger.warn("Error checking file age for cleanup: {}", e.getMessage());
+        }
+    }
+    
+    /**
+     * Cleanup old tracking file by archiving and creating fresh file
+     */
+    private void cleanupTrackingFile() {
+        try {
+            Path trackingFile = Paths.get(trackingFilePath);
+            
+            if (Files.exists(trackingFile)) {
+                // Create archive filename with timestamp
+                String timestamp = java.time.LocalDateTime.now().format(
+                    java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+                String archiveFileName = trackingFilePath.replace(".txt", "_archived_" + timestamp + ".txt");
+                
+                // Move current file to archive
+                Files.move(trackingFile, Paths.get(archiveFileName));
+                logger.info("Archived old tracking file to: {}", archiveFileName);
+                
+                // Clear in-memory cache since we archived the file
+                processedEventIds.clear();
+                logger.info("Cleared in-memory processed events cache after cleanup");
+                
+                // Optional: Keep only last 3 archive files to prevent disk space issues
+                cleanupOldArchives();
+            }
+            
+        } catch (Exception e) {
+            logger.error("Error during tracking file cleanup: {}", e.getMessage());
+        }
+    }
+    
+    /**
+     * Keep only the 3 most recent archive files
+     */
+    private void cleanupOldArchives() {
+        try {
+            String baseFileName = trackingFilePath.replace(".txt", "_archived_");
+            Path parentDir = Paths.get(trackingFilePath).getParent();
+            if (parentDir == null) parentDir = Paths.get(".");
+            
+            List<Path> archiveFiles = Files.list(parentDir)
+                .filter(path -> path.getFileName().toString().startsWith(
+                    Paths.get(baseFileName).getFileName().toString()))
+                .sorted((p1, p2) -> {
+                    try {
+                        return Files.getLastModifiedTime(p2).compareTo(Files.getLastModifiedTime(p1));
+                    } catch (IOException e) {
+                        return 0;
+                    }
+                })
+                .collect(Collectors.toList());
+            
+            // Keep only the 3 most recent archives
+            for (int i = 3; i < archiveFiles.size(); i++) {
+                Files.deleteIfExists(archiveFiles.get(i));
+                logger.info("Deleted old archive file: {}", archiveFiles.get(i));
+            }
+            
+        } catch (Exception e) {
+            logger.warn("Error cleaning up old archive files: {}", e.getMessage());
+        }
     }
     
     /**
