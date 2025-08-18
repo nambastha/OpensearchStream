@@ -1,13 +1,13 @@
 package com.streaming.opensearch.consumer;
 
-import com.streaming.opensearch.config.OpenSearchConfig;
+import com.streaming.opensearch.config.ElasticsearchConfig;
 import com.streaming.opensearch.model.Event;
-import org.opensearch.client.opensearch.OpenSearchClient;
-import org.opensearch.client.opensearch._types.SortOrder;
-import org.opensearch.client.opensearch._types.query_dsl.Query;
-import org.opensearch.client.opensearch.core.SearchRequest;
-import org.opensearch.client.opensearch.core.SearchResponse;
-import org.opensearch.client.opensearch.core.search.Hit;
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.SortOrder;
+import co.elastic.clients.elasticsearch._types.query_dsl.Query;
+import co.elastic.clients.elasticsearch.core.SearchRequest;
+import co.elastic.clients.elasticsearch.core.SearchResponse;
+import co.elastic.clients.elasticsearch.core.search.Hit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
 public class ReadOnlyEventConsumer {
     private static final Logger logger = LoggerFactory.getLogger(ReadOnlyEventConsumer.class);
     
-    private final OpenSearchClient client;
+    private final ElasticsearchClient client;
     private final String sourceIndexName;
     private final String trackingFilePath;
     private final String checkpointFilePath;
@@ -43,7 +43,7 @@ public class ReadOnlyEventConsumer {
     private static final int MAX_MEMORY_CACHE = 10000;
 
     public ReadOnlyEventConsumer(String sourceIndexName) {
-        this.client = OpenSearchConfig.createClient();
+        this.client = ElasticsearchConfig.createClient();
         this.sourceIndexName = sourceIndexName;
         this.trackingFilePath = "processed_events_" + sourceIndexName + ".txt";
         this.checkpointFilePath = "checkpoint_" + sourceIndexName + ".txt";
@@ -217,7 +217,7 @@ public class ReadOnlyEventConsumer {
             SearchRequest searchRequest = SearchRequest.of(s -> s
                 .index(sourceIndexName)
                 .query(Query.of(q -> q.range(r -> r.field("timestamp")
-                    .gt(org.opensearch.client.json.JsonData.of(lastProcessedTimestamp)))))
+                    .gt(co.elastic.clients.json.JsonData.of(lastProcessedTimestamp)))))
                 .sort(so -> so.field(f -> f.field("timestamp").order(SortOrder.Asc)))
                 .size(BATCH_SIZE)
             );
@@ -265,7 +265,7 @@ public class ReadOnlyEventConsumer {
         stop();
         // Save final checkpoint
         saveCheckpointToFile(lastProcessedTimestamp);
-        OpenSearchConfig.closeClient(client);
+        ElasticsearchConfig.closeClient(client);
     }
 
     public long getProcessedCount() {

@@ -22,13 +22,9 @@ public class Event {
     
     @JsonProperty("data")
     private String data;
-    
-    @JsonProperty("processed")
-    private boolean processed;
 
     public Event() {
         this.timestamp = Instant.now().toString();
-        this.processed = false;
     }
 
     public Event(String id, String eventType, String userId, String data) {
@@ -80,14 +76,6 @@ public class Event {
         this.data = data;
     }
 
-    public boolean isProcessed() {
-        return processed;
-    }
-
-    public void setProcessed(boolean processed) {
-        this.processed = processed;
-    }
-
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -109,7 +97,6 @@ public class Event {
                 ", eventType='" + eventType + '\'' +
                 ", userId='" + userId + '\'' +
                 ", data='" + data + '\'' +
-                ", processed=" + processed +
                 '}';
     }
 }
