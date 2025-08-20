@@ -164,6 +164,23 @@ public class ElasticsearchOffsetManager {
     }
     
     /**
+     * Update offset after processing an event with Elasticsearch timestamp format
+     * Converts from Elasticsearch format to ISO format for storage
+     */
+    public void updateOffsetFromElasticsearch(String consumerId, String indexName, 
+                                            String elasticsearchTimestamp, String docId) {
+        OffsetRecord offset = loadOffset(consumerId, indexName);
+        // Convert Elasticsearch timestamp to ISO format and update
+        offset.setLastProcessedTimestampFromElasticsearch(elasticsearchTimestamp);
+        offset.setLastProcessedDocId(docId);
+        offset.incrementTotalProcessed();
+        saveOffset(offset);
+        
+        logger.debug("Updated offset from Elasticsearch timestamp '{}' to ISO '{}' for consumer {}, index {}", 
+            elasticsearchTimestamp, offset.getLastProcessedTimestamp(), consumerId, indexName);
+    }
+    
+    /**
      * Mark the start of a query batch to prevent missing events during long-running queries
      * This timestamp will be used as the starting point for the next query
      */
@@ -182,11 +199,32 @@ public class ElasticsearchOffsetManager {
     }
     
     /**
-     * Get the effective starting timestamp for the next query
+     * Get the effective starting timestamp for the next query in Elasticsearch format
      * Uses queryStartTimestamp if available (to handle long-running queries),
      * otherwise falls back to lastProcessedTimestamp
+     * Returns timestamp in Elasticsearch format: "Aug 11, 2025 @ 14:20:05.648"
      */
     public String getEffectiveStartTimestamp(String consumerId, String indexName) {
+        OffsetRecord offset = loadOffset(consumerId, indexName);
+        
+        if (offset.getQueryStartTimestamp() != null && !offset.getQueryStartTimestamp().isEmpty()) {
+            String elasticsearchFormat = offset.getQueryStartTimestampForQuery();
+            logger.debug("Using queryStartTimestamp {} (ES format: {}) for consumer {}, index {}", 
+                offset.getQueryStartTimestamp(), elasticsearchFormat, consumerId, indexName);
+            return elasticsearchFormat;
+        } else {
+            String elasticsearchFormat = offset.getLastProcessedTimestampForQuery();
+            logger.debug("Using lastProcessedTimestamp {} (ES format: {}) for consumer {}, index {}", 
+                offset.getLastProcessedTimestamp(), elasticsearchFormat, consumerId, indexName);
+            return elasticsearchFormat;
+        }
+    }
+    
+    /**
+     * Get the effective starting timestamp for the next query in ISO format
+     * Returns timestamp in ISO format: "2025-08-11T14:20:05.648Z"
+     */
+    public String getEffectiveStartTimestampISO(String consumerId, String indexName) {
         OffsetRecord offset = loadOffset(consumerId, indexName);
         
         if (offset.getQueryStartTimestamp() != null && !offset.getQueryStartTimestamp().isEmpty()) {
