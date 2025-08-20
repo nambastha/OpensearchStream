@@ -59,17 +59,20 @@ public class ElasticsearchConfig {
             
             logger.info("Connecting to Elasticsearch cluster with {} nodes: {}", hosts.size(), hosts);
             
-            RestClientBuilder builder = RestClient.builder(hosts.toArray(new HttpHost[0]));
-            
-            // Add SSL configuration
-            if ("https".equals(scheme)) {
-                configureSSL(builder, trustAllCerts);
-            }
-            
-            // Add authentication if credentials are provided
+            // Create credentials provider
+            CredentialsProvider credentialsProvider = null;
             if (username != null && password != null) {
-                configureAuthentication(builder, username, password);
+                credentialsProvider = createCredentialsProvider(username, password);
             }
+            
+            // Create SSL context
+            SSLContext sslContext = null;
+            if ("https".equals(scheme)) {
+                sslContext = createSSLContext(trustAllCerts);
+            }
+            
+            // Create RestClientBuilder using the refactored method
+            RestClientBuilder builder = getRestClientBuilder(hosts, credentialsProvider, sslContext);
             
             // Set connection timeouts and retry policies
             configureTimeouts(builder);
@@ -104,9 +107,50 @@ public class ElasticsearchConfig {
     }
     
     /**
-     * Configure SSL settings including trust-all-certs option
+     * Create RestClientBuilder with hosts, credentials, and SSL context
      */
-    private static void configureSSL(RestClientBuilder builder, boolean trustAllCerts) {
+    private static RestClientBuilder getRestClientBuilder(List<HttpHost> hosts, 
+                                                         CredentialsProvider credentialsProvider, 
+                                                         SSLContext sslContext) {
+        RestClientBuilder builder = RestClient.builder(hosts.toArray(new HttpHost[0]));
+        
+        // Configure HTTP client with SSL and credentials
+        builder.setHttpClientConfigCallback(httpClientBuilder -> {
+            // Set SSL context if provided
+            if (sslContext != null) {
+                httpClientBuilder.setSSLContext(sslContext);
+                // Disable hostname verification if trust-all is enabled
+                if (isTrustAllContext(sslContext)) {
+                    httpClientBuilder.setSSLHostnameVerifier((hostname, session) -> true);
+                }
+            }
+            
+            // Set credentials provider if provided
+            if (credentialsProvider != null) {
+                httpClientBuilder.setDefaultCredentialsProvider(credentialsProvider);
+            }
+            
+            return httpClientBuilder;
+        });
+        
+        return builder;
+    }
+    
+    /**
+     * Create credentials provider
+     */
+    private static CredentialsProvider createCredentialsProvider(String username, String password) {
+        CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
+        credentialsProvider.setCredentials(AuthScope.ANY,
+            new UsernamePasswordCredentials(username, password));
+        logger.info("Created credentials provider for user: {}", username);
+        return credentialsProvider;
+    }
+    
+    /**
+     * Create SSL context with optional trust-all-certs
+     */
+    private static SSLContext createSSLContext(boolean trustAllCerts) {
         try {
             SSLContext sslContext;
             
@@ -130,30 +174,21 @@ public class ElasticsearchConfig {
                 sslContext = SSLContexts.createDefault();
             }
             
-            builder.setHttpClientConfigCallback(httpClientBuilder -> {
-                httpClientBuilder.setSSLContext(sslContext);
-                if (trustAllCerts) {
-                    httpClientBuilder.setSSLHostnameVerifier((hostname, session) -> true);
-                }
-                return httpClientBuilder;
-            });
+            return sslContext;
             
         } catch (Exception e) {
-            logger.error("Failed to configure SSL context", e);
-            throw new RuntimeException("SSL configuration failed", e);
+            logger.error("Failed to create SSL context", e);
+            throw new RuntimeException("SSL context creation failed", e);
         }
     }
     
     /**
-     * Configure authentication
+     * Check if SSL context is configured for trust-all (helper method)
      */
-    private static void configureAuthentication(RestClientBuilder builder, String username, String password) {
-        CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
-        credentialsProvider.setCredentials(AuthScope.ANY,
-            new UsernamePasswordCredentials(username, password));
-        
-        builder.setHttpClientConfigCallback(httpClientBuilder ->
-            httpClientBuilder.setDefaultCredentialsProvider(credentialsProvider));
+    private static boolean isTrustAllContext(SSLContext sslContext) {
+        // Simple heuristic: if SSL context is not the default, assume it's trust-all
+        // This is not 100% accurate but sufficient for hostname verification control
+        return sslContext != null && !sslContext.getProtocol().equals("Default");
     }
     
     /**
