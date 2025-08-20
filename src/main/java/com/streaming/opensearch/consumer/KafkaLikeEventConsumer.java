@@ -13,6 +13,8 @@ import co.elastic.clients.elasticsearch.core.search.Hit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -40,6 +42,7 @@ public class KafkaLikeEventConsumer {
     private static final long POLL_INTERVAL_MS = 2000;
     private static final int RECENT_CACHE_SIZE = 1000;
     private static final int OFFSET_COMMIT_INTERVAL = 10; // Commit offset every 10 events
+    private static final int SAFETY_WINDOW_SECONDS = 30; // Safety window to catch late-arriving events
     
     public KafkaLikeEventConsumer(String sourceIndexName) {
         this(sourceIndexName, generateConsumerId());
@@ -171,11 +174,32 @@ public class KafkaLikeEventConsumer {
     
     private List<Event> fetchUnprocessedEvents() {
         try {
-            // Query for events newer than the last processed timestamp
+            // Add safety window to catch late-arriving events
+            String safetyTimestamp = subtractSeconds(currentOffset.getLastProcessedTimestamp(), SAFETY_WINDOW_SECONDS);
+            
+            logger.debug("Consumer {} querying with safety window: original={}, safety={}, lastDocId={}", 
+                consumerId, currentOffset.getLastProcessedTimestamp(), safetyTimestamp, currentOffset.getLastProcessedDocId());
+            
+            // Build query with safety window and exclude already processed document
+            Query.Builder queryBuilder = new Query.Builder();
+            
+            if (currentOffset.getLastProcessedDocId() != null) {
+                // Use bool query to combine range and exclusion
+                queryBuilder.bool(b -> b
+                    .must(m -> m.range(r -> r.field("timestamp")
+                        .gt(co.elastic.clients.json.JsonData.of(safetyTimestamp))))
+                    .mustNot(mn -> mn.term(t -> t.field("_id")
+                        .value(currentOffset.getLastProcessedDocId())))
+                );
+            } else {
+                // Simple range query if no last processed doc ID
+                queryBuilder.range(r -> r.field("timestamp")
+                    .gt(co.elastic.clients.json.JsonData.of(safetyTimestamp)));
+            }
+            
             SearchRequest searchRequest = SearchRequest.of(s -> s
                 .index(sourceIndexName)
-                .query(Query.of(q -> q.range(r -> r.field("timestamp")
-                    .gt(co.elastic.clients.json.JsonData.of(currentOffset.getLastProcessedTimestamp())))))
+                .query(queryBuilder.build())
                 .sort(so -> so.field(f -> f.field("timestamp").order(SortOrder.Asc)))
                 .size(BATCH_SIZE)
             );
@@ -215,11 +239,39 @@ public class KafkaLikeEventConsumer {
     
     /**
      * Update offset in memory (not yet committed to Elasticsearch)
+     * Uses smart update strategy to prevent race conditions:
+     * - Only advance timestamp if event is newer (prevents going backwards)
+     * - Always update doc ID to prevent duplicates
      */
     private void updateOffsetInMemory(Event event) {
-        currentOffset.updateOffset(event.getTimestamp(), event.getId());
+        // Only advance timestamp if event is newer (prevents race condition)
+        if (event.getTimestamp().compareTo(currentOffset.getLastProcessedTimestamp()) > 0) {
+            currentOffset.setLastProcessedTimestamp(event.getTimestamp());
+            logger.debug("Consumer {} advanced timestamp to: {}", consumerId, event.getTimestamp());
+        } else {
+            logger.debug("Consumer {} keeping current timestamp (event not newer): current={}, event={}", 
+                consumerId, currentOffset.getLastProcessedTimestamp(), event.getTimestamp());
+        }
+        
+        // Always update last processed doc ID to prevent duplicates
+        currentOffset.setLastProcessedDocId(event.getId());
+        currentOffset.incrementTotalProcessed();
+        
         logger.debug("Consumer {} updated offset in memory: timestamp={}, docId={}, total={}", 
-            consumerId, event.getTimestamp(), event.getId(), currentOffset.getTotalProcessed());
+            consumerId, currentOffset.getLastProcessedTimestamp(), event.getId(), currentOffset.getTotalProcessed());
+    }
+    
+    /**
+     * Subtract seconds from a timestamp string to create a safety window
+     */
+    private String subtractSeconds(String timestamp, int seconds) {
+        try {
+            Instant instant = Instant.parse(timestamp);
+            return instant.minus(seconds, ChronoUnit.SECONDS).toString();
+        } catch (Exception e) {
+            logger.warn("Error parsing timestamp {}, using original: {}", timestamp, e.getMessage());
+            return timestamp;
+        }
     }
     
     /**
