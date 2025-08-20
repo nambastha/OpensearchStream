@@ -63,6 +63,7 @@ public class ElasticsearchOffsetManager {
                         .properties("lastProcessedDocId", p -> p.text(t -> t))
                         .properties("lastUpdated", p -> p.text(t -> t))
                         .properties("totalProcessed", p -> p.long_(l -> l))
+                        .properties("queryStartTimestamp", p -> p.text(t -> t))
                     )
                 );
                 
@@ -160,6 +161,60 @@ public class ElasticsearchOffsetManager {
         OffsetRecord offset = loadOffset(consumerId, indexName);
         offset.updateOffset(timestamp, docId);
         saveOffset(offset);
+    }
+    
+    /**
+     * Mark the start of a query batch to prevent missing events during long-running queries
+     * This timestamp will be used as the starting point for the next query
+     */
+    public void markQueryStart(String consumerId, String indexName) {
+        offsetLock.lock();
+        try {
+            OffsetRecord offset = loadOffset(consumerId, indexName);
+            String currentTime = Instant.now().toString();
+            offset.setQueryStartTimestamp(currentTime);
+            saveOffset(offset);
+            logger.debug("Marked query start time {} for consumer {}, index {}", 
+                currentTime, consumerId, indexName);
+        } finally {
+            offsetLock.unlock();
+        }
+    }
+    
+    /**
+     * Get the effective starting timestamp for the next query
+     * Uses queryStartTimestamp if available (to handle long-running queries),
+     * otherwise falls back to lastProcessedTimestamp
+     */
+    public String getEffectiveStartTimestamp(String consumerId, String indexName) {
+        OffsetRecord offset = loadOffset(consumerId, indexName);
+        
+        if (offset.getQueryStartTimestamp() != null && !offset.getQueryStartTimestamp().isEmpty()) {
+            logger.debug("Using queryStartTimestamp {} for consumer {}, index {}", 
+                offset.getQueryStartTimestamp(), consumerId, indexName);
+            return offset.getQueryStartTimestamp();
+        } else {
+            logger.debug("Using lastProcessedTimestamp {} for consumer {}, index {}", 
+                offset.getLastProcessedTimestamp(), consumerId, indexName);
+            return offset.getLastProcessedTimestamp();
+        }
+    }
+    
+    /**
+     * Clear the query start timestamp after successfully completing a query
+     * This ensures the next query uses the regular lastProcessedTimestamp
+     */
+    public void clearQueryStart(String consumerId, String indexName) {
+        offsetLock.lock();
+        try {
+            OffsetRecord offset = loadOffset(consumerId, indexName);
+            offset.setQueryStartTimestamp(null);
+            saveOffset(offset);
+            logger.debug("Cleared query start timestamp for consumer {}, index {}", 
+                consumerId, indexName);
+        } finally {
+            offsetLock.unlock();
+        }
     }
     
     /**

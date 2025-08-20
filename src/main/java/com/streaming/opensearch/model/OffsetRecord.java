@@ -26,10 +26,14 @@ public class OffsetRecord {
     
     @JsonProperty("totalProcessed")
     private long totalProcessed;
+    
+    @JsonProperty("queryStartTimestamp")
+    private String queryStartTimestamp;
 
     public OffsetRecord() {
         this.lastUpdated = Instant.now().toString();
         this.totalProcessed = 0L;
+        this.queryStartTimestamp = null;
     }
 
     public OffsetRecord(String consumerId, String indexName) {
@@ -48,6 +52,7 @@ public class OffsetRecord {
         this.lastProcessedTimestamp = lastProcessedTimestamp;
         this.lastProcessedDocId = lastProcessedDocId;
         this.totalProcessed = totalProcessed;
+        this.queryStartTimestamp = null;
     }
 
     // Getters and Setters
@@ -107,6 +112,15 @@ public class OffsetRecord {
         this.lastUpdated = Instant.now().toString();
     }
 
+    public String getQueryStartTimestamp() {
+        return queryStartTimestamp;
+    }
+
+    public void setQueryStartTimestamp(String queryStartTimestamp) {
+        this.queryStartTimestamp = queryStartTimestamp;
+        this.lastUpdated = Instant.now().toString();
+    }
+
     /**
      * Generate unique document ID for this offset record
      * Format: {consumerId}_{indexName}
@@ -148,6 +162,7 @@ public class OffsetRecord {
                 ", lastProcessedDocId='" + lastProcessedDocId + '\'' +
                 ", lastUpdated='" + lastUpdated + '\'' +
                 ", totalProcessed=" + totalProcessed +
+                ", queryStartTimestamp='" + queryStartTimestamp + '\'' +
                 '}';
     }
 }
