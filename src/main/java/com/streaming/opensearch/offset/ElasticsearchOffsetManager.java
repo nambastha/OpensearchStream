@@ -182,16 +182,17 @@ public class ElasticsearchOffsetManager {
     
     /**
      * Mark the start of a query batch to prevent missing events during long-running queries
-     * This timestamp will be used as the starting point for the next query
+     * This timestamp represents when query execution STARTED, not when it completed
+     * Used as the starting point for the next query to ensure no events are missed
      */
-    public void markQueryStart(String consumerId, String indexName) {
+    public void markQueryExecutionStart(String consumerId, String indexName) {
         offsetLock.lock();
         try {
             OffsetRecord offset = loadOffset(consumerId, indexName);
             String currentTime = Instant.now().toString();
             offset.setQueryStartTimestamp(currentTime);
             saveOffset(offset);
-            logger.debug("Marked query start time {} for consumer {}, index {}", 
+            logger.debug("Marked query execution start time {} for consumer {}, index {} - this prevents missing events during long-running queries", 
                 currentTime, consumerId, indexName);
         } finally {
             offsetLock.unlock();
@@ -200,8 +201,12 @@ public class ElasticsearchOffsetManager {
     
     /**
      * Get the effective starting timestamp for the next query in Elasticsearch format
-     * Uses queryStartTimestamp if available (to handle long-running queries),
-     * otherwise falls back to lastProcessedTimestamp
+     * Uses queryStartTimestamp if available (represents when previous query STARTED execution),
+     * otherwise falls back to lastProcessedTimestamp (represents completion of last processed event)
+     * 
+     * Key insight: queryStartTimestamp captures when query execution began, ensuring we don't
+     * miss events that arrived during long-running query execution periods
+     * 
      * Returns timestamp in Elasticsearch format: "Aug 11, 2025 @ 14:20:05.648"
      */
     public String getEffectiveStartTimestamp(String consumerId, String indexName) {
@@ -209,12 +214,12 @@ public class ElasticsearchOffsetManager {
         
         if (offset.getQueryStartTimestamp() != null && !offset.getQueryStartTimestamp().isEmpty()) {
             String elasticsearchFormat = offset.getQueryStartTimestampForQuery();
-            logger.debug("Using queryStartTimestamp {} (ES format: {}) for consumer {}, index {}", 
+            logger.debug("Using queryStartTimestamp {} (ES format: {}) for consumer {}, index {} - this ensures no events missed during long-running queries", 
                 offset.getQueryStartTimestamp(), elasticsearchFormat, consumerId, indexName);
             return elasticsearchFormat;
         } else {
             String elasticsearchFormat = offset.getLastProcessedTimestampForQuery();
-            logger.debug("Using lastProcessedTimestamp {} (ES format: {}) for consumer {}, index {}", 
+            logger.debug("Using lastProcessedTimestamp {} (ES format: {}) for consumer {}, index {} - normal processing mode", 
                 offset.getLastProcessedTimestamp(), elasticsearchFormat, consumerId, indexName);
             return elasticsearchFormat;
         }
@@ -222,33 +227,41 @@ public class ElasticsearchOffsetManager {
     
     /**
      * Get the effective starting timestamp for the next query in ISO format
+     * Uses queryStartTimestamp (query execution start) if available, otherwise lastProcessedTimestamp (event completion)
+     * 
+     * This ensures proper handling of long-running queries by using the query execution start time
+     * as the boundary, preventing events from being missed during query execution periods
+     * 
      * Returns timestamp in ISO format: "2025-08-11T14:20:05.648Z"
      */
     public String getEffectiveStartTimestampISO(String consumerId, String indexName) {
         OffsetRecord offset = loadOffset(consumerId, indexName);
         
         if (offset.getQueryStartTimestamp() != null && !offset.getQueryStartTimestamp().isEmpty()) {
-            logger.debug("Using queryStartTimestamp {} for consumer {}, index {}", 
+            logger.debug("Using queryStartTimestamp {} for consumer {}, index {} - protecting against long-running query gaps", 
                 offset.getQueryStartTimestamp(), consumerId, indexName);
             return offset.getQueryStartTimestamp();
         } else {
-            logger.debug("Using lastProcessedTimestamp {} for consumer {}, index {}", 
+            logger.debug("Using lastProcessedTimestamp {} for consumer {}, index {} - standard processing", 
                 offset.getLastProcessedTimestamp(), consumerId, indexName);
             return offset.getLastProcessedTimestamp();
         }
     }
     
     /**
-     * Clear the query start timestamp after successfully completing a query
-     * This ensures the next query uses the regular lastProcessedTimestamp
+     * Clear the query start timestamp after successfully completing query execution and processing
+     * This transitions back to normal mode where lastProcessedTimestamp is used as the starting point
+     * 
+     * Call this ONLY after query execution completes AND all events from that batch are processed
+     * This ensures we don't clear the protection before processing is actually complete
      */
-    public void clearQueryStart(String consumerId, String indexName) {
+    public void clearQueryExecutionStart(String consumerId, String indexName) {
         offsetLock.lock();
         try {
             OffsetRecord offset = loadOffset(consumerId, indexName);
             offset.setQueryStartTimestamp(null);
             saveOffset(offset);
-            logger.debug("Cleared query start timestamp for consumer {}, index {}", 
+            logger.debug("Cleared query execution start timestamp for consumer {}, index {} - returning to normal processing mode", 
                 consumerId, indexName);
         } finally {
             offsetLock.unlock();
@@ -370,8 +383,19 @@ public class ElasticsearchOffsetManager {
             var statsResponse = client.indices().stats(s -> s.index(offsetIndexName));
             logger.info("=== OFFSET INDEX STATS ===");
             logger.info("Index: {}", offsetIndexName);
-            logger.info("Documents: {}", statsResponse.total().docs().count());
-            logger.info("Size: {} bytes", statsResponse.total().store().sizeInBytes());
+            
+            // Get stats from the first index in the response
+            var indexStats = statsResponse.indices().get(offsetIndexName);
+            if (indexStats != null && indexStats.total() != null) {
+                if (indexStats.total().docs() != null) {
+                    logger.info("Documents: {}", indexStats.total().docs().count());
+                }
+                if (indexStats.total().store() != null) {
+                    logger.info("Size: {} bytes", indexStats.total().store().sizeInBytes());
+                }
+            } else {
+                logger.info("Stats not available for index: {}", offsetIndexName);
+            }
             logger.info("========================");
         } catch (Exception e) {
             logger.warn("Could not retrieve offset index stats: {}", e.getMessage());

@@ -104,38 +104,60 @@ public class KafkaLikeEventConsumer {
         
         while (running) {
             try {
+                // Mark query execution start to protect against long-running query gaps
+                offsetManager.markQueryExecutionStart(consumerId, sourceIndexName);
+                
                 List<Event> events = fetchUnprocessedEvents();
                 
                 if (!events.isEmpty()) {
                     logger.info("Fetched {} unprocessed events for consumer {}", events.size(), consumerId);
                     
+                    // Process all events in the batch
+                    boolean batchProcessedSuccessfully = true;
+                    
                     for (Event event : events) {
                         // Double-check to avoid reprocessing recent events
                         if (!recentlyProcessedIds.contains(event.getId())) {
-                            processEvent(event);
-                            updateOffsetInMemory(event);
-                            recentlyProcessedIds.add(event.getId());
-                            
-                            long sessionCount = sessionProcessedCount.incrementAndGet();
-                            long totalCount = currentOffset.getTotalProcessed();
-                            
-                            if (sessionCount % 50 == 0) {
-                                logger.info("Consumer {} processed {} events this session (total: {})", 
-                                    consumerId, sessionCount, totalCount);
-                            }
-                            
-                            // Commit offset periodically
-                            if (sessionCount - lastOffsetCommit >= OFFSET_COMMIT_INTERVAL) {
-                                commitOffset();
-                                lastOffsetCommit = sessionCount;
+                            try {
+                                processEvent(event);
+                                updateOffsetInMemory(event);
+                                recentlyProcessedIds.add(event.getId());
+                                
+                                long sessionCount = sessionProcessedCount.incrementAndGet();
+                                long totalCount = currentOffset.getTotalProcessed();
+                                
+                                if (sessionCount % 50 == 0) {
+                                    logger.info("Consumer {} processed {} events this session (total: {})", 
+                                        consumerId, sessionCount, totalCount);
+                                }
+                                
+                                // Commit offset periodically
+                                if (sessionCount - lastOffsetCommit >= OFFSET_COMMIT_INTERVAL) {
+                                    commitOffset();
+                                    lastOffsetCommit = sessionCount;
+                                }
+                            } catch (Exception eventError) {
+                                logger.error("Error processing event {} in consumer {}", event.getId(), consumerId, eventError);
+                                batchProcessedSuccessfully = false;
+                                break; // Don't continue processing if an event fails
                             }
                         } else {
                             logger.debug("Consumer {} skipping recently processed event: {}", 
                                 consumerId, event.getId());
                         }
                     }
+                    
+                    // Only clear query execution start if batch was processed successfully
+                    if (batchProcessedSuccessfully) {
+                        offsetManager.clearQueryExecutionStart(consumerId, sourceIndexName);
+                        logger.debug("Consumer {} completed batch processing successfully, cleared query execution start", consumerId);
+                    } else {
+                        logger.warn("Consumer {} batch processing failed, keeping query execution start protection", consumerId);
+                    }
                 } else {
                     logger.debug("Consumer {} found no new events", consumerId);
+                    // No events found, safe to clear query execution start
+                    offsetManager.clearQueryExecutionStart(consumerId, sourceIndexName);
                 }
                 
                 // Manage memory usage of recent cache
@@ -165,6 +187,8 @@ public class KafkaLikeEventConsumer {
         // Final offset commit
         try {
             commitOffset();
+            // Clear query execution start on shutdown
+            offsetManager.clearQueryExecutionStart(consumerId, sourceIndexName);
             logger.info("Consumer {} stopped. Session events processed: {}, Total: {}", 
                 consumerId, sessionProcessedCount.get(), currentOffset.getTotalProcessed());
         } catch (Exception e) {
@@ -174,11 +198,14 @@ public class KafkaLikeEventConsumer {
     
     private List<Event> fetchUnprocessedEvents() {
         try {
-            // Add safety window to catch late-arriving events
-            String safetyTimestamp = subtractSeconds(currentOffset.getLastProcessedTimestamp(), SAFETY_WINDOW_SECONDS);
+            // Use effective start timestamp which handles long-running queries properly
+            String effectiveStartTimestamp = offsetManager.getEffectiveStartTimestampISO(consumerId, sourceIndexName);
             
-            logger.debug("Consumer {} querying with safety window: original={}, safety={}, lastDocId={}", 
-                consumerId, currentOffset.getLastProcessedTimestamp(), safetyTimestamp, currentOffset.getLastProcessedDocId());
+            // Add safety window to catch late-arriving events
+            String safetyTimestamp = subtractSeconds(effectiveStartTimestamp, SAFETY_WINDOW_SECONDS);
+            
+            logger.debug("Consumer {} querying with effective start timestamp: effective={}, safety={}, lastDocId={}", 
+                consumerId, effectiveStartTimestamp, safetyTimestamp, currentOffset.getLastProcessedDocId());
             
             // Build query with safety window and exclude already processed document
             Query.Builder queryBuilder = new Query.Builder();
