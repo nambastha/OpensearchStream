@@ -1,0 +1,311 @@
+@startuml High-Level Architecture
+!theme aws-orange
+
+title OpenSearch Event Streaming - High-Level Architecture
+
+package "Container Environment (Kubernetes/Docker)" as container {
+    node "Pod 1" as pod1 {
+        [Consumer Group A\nevent-processor-v1] as consumer1
+    }
+    
+    node "Pod 2" as pod2 {
+        [Consumer Group B\nanalytics-processor] as consumer2
+    }
+    
+    node "Pod 3" as pod3 {
+        [Consumer Group A\nevent-processor-v1\n(Replica)] as consumer3
+    }
+    
+    node "Producer Pod" as prod_pod {
+        [Event Producer\nContinuous Generation] as producer
+    }
+}
+
+package "OpenSearch Cluster" as opensearch {
+    database "Events Index" as events_db {
+        note top
+            • Event Documents
+            • _seq_no: 1,2,3...
+            • _primary_term
+            • processed: false/true
+        end note
+    }
+    
+    database "Consumer-Offsets Index" as offsets_db {
+        note top
+            • Consumer Group ID
+            • Last Processed seq_no
+            • Primary Term
+            • Timestamp
+        end note
+    }
+}
+
+producer -right-> events_db : Produces Events
+consumer1 -right-> events_db : Reads Events WHERE\n_seq_no > last_offset
+consumer2 -right-> events_db : Reads Events WHERE\n_seq_no > last_offset  
+consumer3 -right-> events_db : Reads Events WHERE\n_seq_no > last_offset
+
+consumer1 -right-> offsets_db : Commits Offset\nAtomically
+consumer2 -right-> offsets_db : Commits Offset\nAtomically
+consumer3 -right-> offsets_db : Commits Offset\nAtomically
+
+consumer1 ..> offsets_db : On Startup\nLoad Last Offset
+consumer2 ..> offsets_db : On Startup\nLoad Last Offset
+consumer3 ..> offsets_db : On Startup\nLoad Last Offset
+
+@enduml
+
+@startuml Component Architecture
+!theme aws-orange
+
+title Improved Event Consumer - Component Architecture
+
+package "ImprovedEventConsumer" as main_consumer {
+    package "Core Components" as core {
+        [EventConsumer\nMain Processing Loop] as ec
+        [OffsetManager\nPersistent Storage] as om
+        [ConsumerOffset\nState Model] as co
+    }
+    
+    package "Processing Flow" as flow {
+        (1. Load Last Offset) as step1
+        (2. Fetch Unprocessed Events\nWHERE _seq_no > last_offset) as step2
+        (3. Process Event Batch) as step3
+        (4. Update Event Status\nprocessed = true) as step4
+        (5. Commit New Offset\nAtomic Operation) as step5
+    }
+}
+
+package "OpenSearch Storage" as storage {
+    package "Events Index" as events_idx {
+        database "Event Doc 1" as ed1 {
+            _seq_no: 1001
+            _primary_term: 1
+            processed: true
+        }
+        database "Event Doc 2" as ed2 {
+            _seq_no: 1002
+            _primary_term: 1
+            processed: true
+        }
+        database "Event Doc 3" as ed3 {
+            _seq_no: 1003
+            _primary_term: 1
+            processed: false
+        }
+    }
+    
+    package "Consumer-Offsets Index" as offsets_idx {
+        database "Group A Offset" as of1 {
+            lastSeqNo: 1002
+            lastPrimaryTerm: 1
+            timestamp: 2024-01-01T10:30:00Z
+        }
+        database "Group B Offset" as of2 {
+            lastSeqNo: 1001
+            lastPrimaryTerm: 1
+            timestamp: 2024-01-01T10:29:00Z
+        }
+    }
+}
+
+ec --> step1
+step1 --> step2
+step2 --> step3
+step3 --> step4
+step4 --> step5
+step5 --> step2 : Loop
+
+step1 --> of1
+step1 --> of2
+step2 --> ed1
+step2 --> ed2
+step2 --> ed3
+step5 --> of1
+step5 --> of2
+
+om --> of1
+om --> of2
+co --> om
+
+@enduml
+
+@startuml Container Restart Flow
+!theme aws-orange
+
+title Container Restart Resilience Flow
+
+participant "Kubernetes" as k8s
+participant "Consumer Pod v1" as pod1
+participant "Consumer Pod v2" as pod2
+participant "OpenSearch" as os
+participant "Offsets Index" as offsets
+
+note over pod1, os : Normal Processing
+pod1 -> os : Process events 1-100
+pod1 -> offsets : Commit offset: seq_no=100
+
+note over k8s, pod1 : Pod Restart Event
+k8s -> pod1 : Kill Pod (OOMKilled/Evicted)
+pod1 --> k8s : Pod Terminated
+
+k8s -> pod2 : Create New Pod
+note over pod2 : Pod Startup
+
+pod2 -> offsets : Load last offset for consumer group
+offsets -> pod2 : Return: seq_no=100, primary_term=1
+
+note over pod2, os : Resume Processing
+pod2 -> os : Fetch events WHERE _seq_no > 100
+os -> pod2 : Return events 101, 102, 103...
+pod2 -> os : Process events 101-150
+pod2 -> offsets : Commit offset: seq_no=150
+
+note over pod2 : No Duplicate Processing!
+
+@enduml
+
+@startuml Before vs After Comparison
+!theme aws-orange
+
+title Before vs After: Offset Management Approach
+
+package "BEFORE: Timestamp-Based (Problematic)" as before {
+    package "Issues" as issues {
+        note as issue_list
+            ❌ Memory Leaks
+            HashSet grows indefinitely
+            
+            ❌ Data Loss on Restart
+            Reprocesses from epoch
+            
+            ❌ Race Conditions
+            Concurrent access issues
+            
+            ❌ Weak Ordering
+            Timestamp collisions
+        end note
+    }
+    
+    package "Architecture" as old_arch {
+        [Original Consumer] as old_consumer
+        [Timestamp Tracking] as ts_track
+        [HashSet Cache] as hashset
+        
+        old_consumer --> ts_track
+        old_consumer --> hashset
+    }
+}
+
+package "AFTER: Sequence Number-Based (Robust)" as after {
+    package "Benefits" as benefits {
+        note as benefit_list
+            ✅ Constant Memory
+            No in-memory caching
+            
+            ✅ Restart Resilience
+            Resumes from last offset
+            
+            ✅ Atomic Operations
+            Consistent state
+            
+            ✅ Strict Ordering
+            Sequence number guarantee
+        end note
+    }
+    
+    package "Architecture" as new_arch {
+        [Improved Consumer] as new_consumer
+        [Sequence Number Tracking] as seq_track
+        [Persistent Offset Store] as persistent
+        
+        new_consumer --> seq_track
+        new_consumer --> persistent
+    }
+}
+
+@enduml
+
+@startuml Deployment Architecture
+!theme aws-orange
+
+title Production Deployment Architecture
+
+package "Production Environment" as prod {
+    package "Namespace: data-processing" as ns {
+        package "Consumer Deployments" as consumers {
+            node "Consumer Deployment" as cd1 {
+                [Replicas: 3\nGroup: analytics-v1] as c1
+            }
+            node "Consumer Deployment" as cd2 {
+                [Replicas: 2\nGroup: notifications-v1] as c2
+            }
+            node "Consumer Deployment" as cd3 {
+                [Replicas: 1\nGroup: audit-v1] as c3
+            }
+        }
+        
+        node "Producer Deployment" as pd {
+            [Replicas: 2\nEvent Generation] as prod_deploy
+        }
+    }
+    
+    package "ConfigMaps & Secrets" as config {
+        [ConfigMap\n- OpenSearch endpoints\n- Index names\n- Consumer groups] as cm
+        [Secret\n- OpenSearch credentials\n- SSL certificates] as sec
+    }
+    
+    package "Monitoring" as monitor {
+        [Prometheus Metrics\n- Events processed\n- Offset lag\n- Consumer health] as prom
+        [Structured Logging\n- JSON format\n- ELK stack integration] as logs
+    }
+}
+
+package "OpenSearch Cluster" as cluster {
+    package "Data Tier" as tier {
+        node "OpenSearch Node 1" as es1 [Master + Data]
+        node "OpenSearch Node 2" as es2 [Master + Data]
+        node "OpenSearch Node 3" as es3 [Data Only]
+    }
+    
+    package "Indices" as indices {
+        database "Events Index" as evi [Shards: 5, Replicas: 1]
+        database "Offsets Index" as ofi [Shards: 1, Replicas: 1]
+    }
+}
+
+c1 --> evi
+c2 --> evi
+c3 --> evi
+prod_deploy --> evi
+
+c1 --> ofi
+c2 --> ofi
+c3 --> ofi
+
+c1 --> cm
+c2 --> cm
+c3 --> cm
+prod_deploy --> cm
+
+c1 --> sec
+c2 --> sec
+c3 --> sec
+prod_deploy --> sec
+
+c1 --> prom
+c2 --> prom
+c3 --> prom
+prod_deploy --> prom
+
+c1 --> logs
+c2 --> logs
+c3 --> logs
+prod_deploy --> logs
+
+es1 <--> es2
+es2 <--> es3
+es1 <--> es3
+
+@enduml

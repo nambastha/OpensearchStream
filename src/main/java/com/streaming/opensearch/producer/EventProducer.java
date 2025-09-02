@@ -1,13 +1,13 @@
 package com.streaming.opensearch.producer;
 
-import com.streaming.opensearch.config.OpenSearchConfig;
+import com.streaming.opensearch.config.ElasticsearchConfig;
 import com.streaming.opensearch.model.Event;
-import org.opensearch.client.opensearch.OpenSearchClient;
-import org.opensearch.client.opensearch._types.OpenSearchException;
-import org.opensearch.client.opensearch.core.IndexRequest;
-import org.opensearch.client.opensearch.core.IndexResponse;
-import org.opensearch.client.opensearch.indices.CreateIndexRequest;
-import org.opensearch.client.opensearch.indices.ExistsRequest;
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.ElasticsearchException;
+import co.elastic.clients.elasticsearch.core.IndexRequest;
+import co.elastic.clients.elasticsearch.core.IndexResponse;
+import co.elastic.clients.elasticsearch.indices.CreateIndexRequest;
+import co.elastic.clients.elasticsearch.indices.ExistsRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class EventProducer {
     private static final Logger logger = LoggerFactory.getLogger(EventProducer.class);
     
-    private final OpenSearchClient client;
+    private final ElasticsearchClient client;
     private final String indexName;
     private final Random random;
     private final AtomicLong eventCounter;
@@ -39,7 +39,7 @@ public class EventProducer {
     };
 
     public EventProducer(String indexName) {
-        this.client = OpenSearchConfig.createClient();
+        this.client = ElasticsearchConfig.createClient();
         this.indexName = indexName;
         this.random = new Random();
         this.eventCounter = new AtomicLong(0);
@@ -59,12 +59,11 @@ public class EventProducer {
                 CreateIndexRequest createIndexRequest = CreateIndexRequest.of(c -> c
                     .index(indexName)
                     .mappings(m -> m
-                        .properties("id", p -> p.keyword(k -> k))
-                        .properties("timestamp", p -> p.date(d -> d))
-                        .properties("eventType", p -> p.keyword(k -> k))
-                        .properties("userId", p -> p.keyword(k -> k))
+                        .properties("id", p -> p.text(t -> t))
+                        .properties("timestamp", p -> p.text(t -> t))
+                        .properties("eventType", p -> p.text(t -> t))
+                        .properties("userId", p -> p.text(t -> t))
                         .properties("data", p -> p.text(t -> t))
-                        .properties("processed", p -> p.boolean_(b -> b))
                     )
                 );
                 
@@ -158,8 +157,8 @@ public class EventProducer {
                 logger.warn("Unexpected response for event {}: {}", event.getId(), response.result());
             }
             
-        } catch (OpenSearchException e) {
-            logger.error("OpenSearch error indexing event {}: {}", event.getId(), e.getMessage());
+        } catch (ElasticsearchException e) {
+            logger.error("Elasticsearch error indexing event {}: {}", event.getId(), e.getMessage());
         } catch (Exception e) {
             logger.error("Error indexing event {}", event.getId(), e);
         }
@@ -167,7 +166,7 @@ public class EventProducer {
 
     public void close() {
         stop();
-        OpenSearchConfig.closeClient(client);
+        ElasticsearchConfig.closeClient(client);
     }
 
     public long getEventCount() {

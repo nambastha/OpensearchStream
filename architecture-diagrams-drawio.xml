@@ -1,0 +1,305 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="Electron" modified="2024-01-01T00:00:00.000Z" agent="draw.io" etag="abc123" version="22.1.11" type="device">
+  <diagram name="High-Level Architecture" id="page1">
+    <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        
+        <!-- Container Environment -->
+        <mxCell id="container-env" value="Container Environment (Kubernetes/Docker)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1F5FE;strokeColor=#0277BD;fontSize=14;fontStyle=1;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="50" y="50" width="700" height="300" as="geometry" />
+        </mxCell>
+        
+        <!-- Pod 1 -->
+        <mxCell id="pod1" value="Pod 1&#xa;Consumer Group A&#xa;event-processor-v1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#4CAF50;" vertex="1" parent="1">
+          <mxGeometry x="80" y="100" width="150" height="80" as="geometry" />
+        </mxCell>
+        
+        <!-- Pod 2 -->
+        <mxCell id="pod2" value="Pod 2&#xa;Consumer Group B&#xa;analytics-processor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#4CAF50;" vertex="1" parent="1">
+          <mxGeometry x="260" y="100" width="150" height="80" as="geometry" />
+        </mxCell>
+        
+        <!-- Pod 3 -->
+        <mxCell id="pod3" value="Pod 3&#xa;Consumer Group A&#xa;event-processor-v1&#xa;(Replica)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#4CAF50;" vertex="1" parent="1">
+          <mxGeometry x="440" y="100" width="150" height="80" as="geometry" />
+        </mxCell>
+        
+        <!-- Producer Pod -->
+        <mxCell id="producer" value="Producer Pod&#xa;Event Producer&#xa;Continuous Generation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#FF9800;" vertex="1" parent="1">
+          <mxGeometry x="80" y="220" width="150" height="80" as="geometry" />
+        </mxCell>
+        
+        <!-- OpenSearch Cluster -->
+        <mxCell id="opensearch-cluster" value="OpenSearch Cluster" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;fontSize=14;fontStyle=1;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="800" y="50" width="300" height="300" as="geometry" />
+        </mxCell>
+        
+        <!-- Events Index -->
+        <mxCell id="events-index" value="Events Index&#xa;• Event Documents&#xa;• _seq_no: 1,2,3...&#xa;• _primary_term&#xa;• processed: false/true" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8EAF6;strokeColor=#3F51B5;" vertex="1" parent="1">
+          <mxGeometry x="820" y="100" width="120" height="100" as="geometry" />
+        </mxCell>
+        
+        <!-- Consumer Offsets Index -->
+        <mxCell id="offsets-index" value="Consumer-Offsets Index&#xa;• Consumer Group ID&#xa;• Last Processed seq_no&#xa;• Primary Term&#xa;• Timestamp" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8EAF6;strokeColor=#3F51B5;" vertex="1" parent="1">
+          <mxGeometry x="960" y="100" width="120" height="100" as="geometry" />
+        </mxCell>
+        
+        <!-- Arrows -->
+        <mxCell id="arrow1" value="Produces Events" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="producer" target="events-index">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="arrow2" value="Reads Events WHERE&#xa;_seq_no &gt; last_offset" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.25;" edge="1" parent="1" source="pod1" target="events-index">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="arrow3" value="Commits Offset&#xa;Atomically" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="pod1" target="offsets-index">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="arrow4" value="On Startup&#xa;Load Last Offset" style="endArrow=classic;html=1;exitX=1;exitY=0.25;entryX=0;entryY=0.75;strokeColor=#FF5722;strokeWidth=2;dashed=1;" edge="1" parent="1" source="pod2" target="offsets-index">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+      </root>
+    </mxGraphModel>
+  </diagram>
+  
+  <diagram name="Component Architecture" id="page2">
+    <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        
+        <!-- ImprovedEventConsumer -->
+        <mxCell id="consumer-main" value="ImprovedEventConsumer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#F57C00;fontSize=16;fontStyle=1;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="50" y="50" width="400" height="400" as="geometry" />
+        </mxCell>
+        
+        <!-- Core Components -->
+        <mxCell id="core-components" value="Core Components" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E8;strokeColor=#2E7D32;verticalAlign=top;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="70" y="90" width="150" height="150" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="event-consumer" value="EventConsumer&#xa;Main Processing Loop" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1976D2;" vertex="1" parent="1">
+          <mxGeometry x="80" y="110" width="130" height="40" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="offset-manager" value="OffsetManager&#xa;Persistent Storage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1976D2;" vertex="1" parent="1">
+          <mxGeometry x="80" y="160" width="130" height="40" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="consumer-offset" value="ConsumerOffset&#xa;State Model" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1976D2;" vertex="1" parent="1">
+          <mxGeometry x="80" y="210" width="130" height="40" as="geometry" />
+        </mxCell>
+        
+        <!-- Processing Flow -->
+        <mxCell id="processing-flow" value="Processing Flow" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E8;strokeColor=#2E7D32;verticalAlign=top;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="250" y="90" width="180" height="300" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="step1" value="1. Load Last Offset" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C5E1A5;strokeColor=#689F38;" vertex="1" parent="1">
+          <mxGeometry x="260" y="110" width="160" height="30" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="step2" value="2. Fetch Unprocessed Events&#xa;WHERE _seq_no &gt; last_offset" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C5E1A5;strokeColor=#689F38;" vertex="1" parent="1">
+          <mxGeometry x="260" y="150" width="160" height="40" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="step3" value="3. Process Event Batch" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C5E1A5;strokeColor=#689F38;" vertex="1" parent="1">
+          <mxGeometry x="260" y="200" width="160" height="30" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="step4" value="4. Update Event Status&#xa;processed = true" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C5E1A5;strokeColor=#689F38;" vertex="1" parent="1">
+          <mxGeometry x="260" y="240" width="160" height="40" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="step5" value="5. Commit New Offset&#xa;Atomic Operation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C5E1A5;strokeColor=#689F38;" vertex="1" parent="1">
+          <mxGeometry x="260" y="290" width="160" height="40" as="geometry" />
+        </mxCell>
+        
+        <!-- OpenSearch Storage -->
+        <mxCell id="opensearch-storage" value="OpenSearch Storage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;fontSize=16;fontStyle=1;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="500" y="50" width="600" height="400" as="geometry" />
+        </mxCell>
+        
+        <!-- Events Index -->
+        <mxCell id="events-index-detailed" value="Events Index" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#8E24AA;fontStyle=1;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="520" y="90" width="250" height="150" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="event-doc1" value="Event Doc 1&#xa;_seq_no: 1001&#xa;_primary_term: 1&#xa;processed: true" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8BBD9;strokeColor=#E91E63;" vertex="1" parent="1">
+          <mxGeometry x="530" y="110" width="100" height="60" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="event-doc2" value="Event Doc 2&#xa;_seq_no: 1002&#xa;_primary_term: 1&#xa;processed: true" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8BBD9;strokeColor=#E91E63;" vertex="1" parent="1">
+          <mxGeometry x="640" y="110" width="100" height="60" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="event-doc3" value="Event Doc 3&#xa;_seq_no: 1003&#xa;_primary_term: 1&#xa;processed: false" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCDD2;strokeColor=#F44336;" vertex="1" parent="1">
+          <mxGeometry x="530" y="180" width="100" height="60" as="geometry" />
+        </mxCell>
+        
+        <!-- Consumer Offsets Index -->
+        <mxCell id="offsets-index-detailed" value="Consumer-Offsets Index" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#8E24AA;fontStyle=1;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="820" y="90" width="250" height="150" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="offset1" value="Group A Offset&#xa;lastSeqNo: 1002&#xa;lastPrimaryTerm: 1&#xa;timestamp: 2024-01-01T10:30:00Z" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B39DDB;strokeColor=#673AB7;" vertex="1" parent="1">
+          <mxGeometry x="830" y="110" width="110" height="80" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="offset2" value="Group B Offset&#xa;lastSeqNo: 1001&#xa;lastPrimaryTerm: 1&#xa;timestamp: 2024-01-01T10:29:00Z" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B39DDB;strokeColor=#673AB7;" vertex="1" parent="1">
+          <mxGeometry x="950" y="110" width="110" height="80" as="geometry" />
+        </mxCell>
+        
+        <!-- Flow Arrows -->
+        <mxCell id="flow-arrow1" value="" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="step1" target="step2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="flow-arrow2" value="" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="step2" target="step3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="flow-arrow3" value="" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="step3" target="step4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="flow-arrow4" value="" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="step4" target="step5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <!-- Connection arrows -->
+        <mxCell id="connect1" value="" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="step1" target="offset1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="connect2" value="" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="step2" target="event-doc1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="connect3" value="" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="step5" target="offset1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+      </root>
+    </mxGraphModel>
+  </diagram>
+  
+  <diagram name="Before vs After Comparison" id="page3">
+    <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        
+        <!-- BEFORE Section -->
+        <mxCell id="before-section" value="BEFORE: Timestamp-Based (Problematic)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFEBEE;strokeColor=#C62828;fontSize=16;fontStyle=1;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="50" y="50" width="500" height="350" as="geometry" />
+        </mxCell>
+        
+        <!-- Issues -->
+        <mxCell id="issues-box" value="Issues" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCDD2;strokeColor=#F44336;fontStyle=1;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="70" y="90" width="200" height="250" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="issue1" value="❌ Memory Leaks&#xa;HashSet grows indefinitely" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EF9A9A;strokeColor=#E57373;" vertex="1" parent="1">
+          <mxGeometry x="80" y="110" width="180" height="40" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="issue2" value="❌ Data Loss on Restart&#xa;Reprocesses from epoch" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EF9A9A;strokeColor=#E57373;" vertex="1" parent="1">
+          <mxGeometry x="80" y="160" width="180" height="40" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="issue3" value="❌ Race Conditions&#xa;Concurrent access issues" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EF9A9A;strokeColor=#E57373;" vertex="1" parent="1">
+          <mxGeometry x="80" y="210" width="180" height="40" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="issue4" value="❌ Weak Ordering&#xa;Timestamp collisions" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EF9A9A;strokeColor=#E57373;" vertex="1" parent="1">
+          <mxGeometry x="80" y="260" width="180" height="40" as="geometry" />
+        </mxCell>
+        
+        <!-- Original Architecture -->
+        <mxCell id="original-arch" value="Architecture" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCDD2;strokeColor=#F44336;fontStyle=1;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="290" y="90" width="240" height="250" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="original-consumer" value="Original Consumer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#F57C00;" vertex="1" parent="1">
+          <mxGeometry x="310" y="120" width="100" height="60" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="timestamp-tracking" value="Timestamp Tracking" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#F57C00;" vertex="1" parent="1">
+          <mxGeometry x="430" y="120" width="80" height="60" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="hashset-cache" value="HashSet Cache" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#F57C00;" vertex="1" parent="1">
+          <mxGeometry x="310" y="200" width="100" height="60" as="geometry" />
+        </mxCell>
+        
+        <!-- AFTER Section -->
+        <mxCell id="after-section" value="AFTER: Sequence Number-Based (Robust)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E8;strokeColor=#2E7D32;fontSize=16;fontStyle=1;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="600" y="50" width="500" height="350" as="geometry" />
+        </mxCell>
+        
+        <!-- Benefits -->
+        <mxCell id="benefits-box" value="Benefits" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#4CAF50;fontStyle=1;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="620" y="90" width="200" height="250" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="benefit1" value="✅ Constant Memory&#xa;No in-memory caching" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#A5D6A7;strokeColor=#66BB6A;" vertex="1" parent="1">
+          <mxGeometry x="630" y="110" width="180" height="40" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="benefit2" value="✅ Restart Resilience&#xa;Resumes from last offset" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#A5D6A7;strokeColor=#66BB6A;" vertex="1" parent="1">
+          <mxGeometry x="630" y="160" width="180" height="40" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="benefit3" value="✅ Atomic Operations&#xa;Consistent state" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#A5D6A7;strokeColor=#66BB6A;" vertex="1" parent="1">
+          <mxGeometry x="630" y="210" width="180" height="40" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="benefit4" value="✅ Strict Ordering&#xa;Sequence number guarantee" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#A5D6A7;strokeColor=#66BB6A;" vertex="1" parent="1">
+          <mxGeometry x="630" y="260" width="180" height="40" as="geometry" />
+        </mxCell>
+        
+        <!-- Improved Architecture -->
+        <mxCell id="improved-arch" value="Architecture" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#4CAF50;fontStyle=1;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="840" y="90" width="240" height="250" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="improved-consumer" value="Improved Consumer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#F57C00;" vertex="1" parent="1">
+          <mxGeometry x="860" y="120" width="100" height="60" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="seq-tracking" value="Sequence Number Tracking" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#F57C00;" vertex="1" parent="1">
+          <mxGeometry x="980" y="120" width="80" height="60" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="persistent-offset" value="Persistent Offset Store" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#F57C00;" vertex="1" parent="1">
+          <mxGeometry x="860" y="200" width="100" height="60" as="geometry" />
+        </mxCell>
+        
+        <!-- Connection arrows for original -->
+        <mxCell id="orig-arrow1" value="" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="original-consumer" target="hashset-cache">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="orig-arrow2" value="" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="original-consumer" target="timestamp-tracking">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <!-- Connection arrows for improved -->
+        <mxCell id="imp-arrow1" value="" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="improved-consumer" target="persistent-offset">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="imp-arrow2" value="" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="improved-consumer" target="seq-tracking">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
