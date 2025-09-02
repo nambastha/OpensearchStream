@@ -80,6 +80,9 @@ public class ReadOnlyEventConsumer {
     private void consumeEvents() {
         while (running) {
             try {
+                // Mark the start of query execution to prevent missing events during long queries
+                offsetManager.markQueryExecutionStart(consumerId, sourceIndexName);
+                
                 List<Event> events = fetchUnprocessedEvents();
                 
                 if (!events.isEmpty()) {
@@ -97,8 +100,13 @@ public class ReadOnlyEventConsumer {
                         offsetManager.updateOffset(consumerId, sourceIndexName, 
                             event.getTimestamp(), event.getId());
                     }
+                    
+                    // Clear query execution start timestamp after successful processing
+                    offsetManager.clearQueryExecutionStart(consumerId, sourceIndexName);
                 } else {
                     logger.debug("No new events found");
+                    // Clear query execution start even when no events found
+                    offsetManager.clearQueryExecutionStart(consumerId, sourceIndexName);
                 }
                 
                 Thread.sleep(POLL_INTERVAL_MS);
@@ -109,6 +117,7 @@ public class ReadOnlyEventConsumer {
                 break;
             } catch (Exception e) {
                 logger.error("Error consuming events", e);
+                // Don't clear query execution start on error - keep the protection
                 try {
                     Thread.sleep(5000); // Wait before retrying
                 } catch (InterruptedException ie) {
