@@ -2,6 +2,8 @@ package com.streaming.opensearch.consumer;
 
 import com.streaming.opensearch.config.ElasticsearchConfig;
 import com.streaming.opensearch.model.Event;
+import com.streaming.opensearch.offset.ElasticsearchOffsetManager;
+import com.streaming.opensearch.model.OffsetRecord;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
@@ -11,116 +13,47 @@ import co.elastic.clients.elasticsearch.core.search.Hit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.*;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 /**
- * Read-only consumer that tracks processed events using local file persistence
- * Does not write to OpenSearch at all - completely safe for shared environments
+ * Read-only consumer that tracks processed events using Elasticsearch-based offset management
+ * Kubernetes-safe - no local file dependencies, persists state in Elasticsearch
+ * Does not write to source index at all - completely safe for shared environments
  */
 public class ReadOnlyEventConsumer {
     private static final Logger logger = LoggerFactory.getLogger(ReadOnlyEventConsumer.class);
     
     private final ElasticsearchClient client;
     private final String sourceIndexName;
-    private final String trackingFilePath;
-    private final String checkpointFilePath;
-    private final Set<String> processedEventIds;
+    private final ElasticsearchOffsetManager offsetManager;
+    private final String consumerId;
     private final AtomicLong processedCount;
     private volatile boolean running;
-    private String lastProcessedTimestamp;
     
     private static final int BATCH_SIZE = 50;
     private static final long POLL_INTERVAL_MS = 2000;
-    private static final int MAX_MEMORY_CACHE = 10000;
 
     public ReadOnlyEventConsumer(String sourceIndexName) {
+        this(sourceIndexName, "readonly-consumer-" + sourceIndexName);
+    }
+    
+    public ReadOnlyEventConsumer(String sourceIndexName, String consumerId) {
         this.client = ElasticsearchConfig.createClient();
         this.sourceIndexName = sourceIndexName;
-        this.trackingFilePath = "processed_events_" + sourceIndexName + ".txt";
-        this.checkpointFilePath = "checkpoint_" + sourceIndexName + ".txt";
-        this.processedEventIds = new HashSet<>();
+        this.consumerId = consumerId;
+        this.offsetManager = new ElasticsearchOffsetManager();
         this.processedCount = new AtomicLong(0);
         this.running = false;
-        this.lastProcessedTimestamp = "1970-01-01T00:00:00Z";
         
-        // Load previously processed events from file
-        loadProcessedEventsFromFile();
-        loadCheckpointFromFile();
+        // Load existing offset record to initialize processedCount
+        OffsetRecord offsetRecord = offsetManager.loadOffset(consumerId, sourceIndexName);
+        this.processedCount.set(offsetRecord.getTotalProcessed());
+        logger.info("Initialized consumer '{}' for index '{}' with {} previously processed events", 
+            consumerId, sourceIndexName, offsetRecord.getTotalProcessed());
     }
 
-    private void loadProcessedEventsFromFile() {
-        Path filePath = Paths.get(trackingFilePath);
-        if (!Files.exists(filePath)) {
-            logger.info("No existing tracking file found. Starting fresh.");
-            return;
-        }
-        
-        try {
-            List<String> lines = Files.readAllLines(filePath);
-            
-            // If file is large, only load recent events to manage memory at startup
-            if (lines.size() > MAX_MEMORY_CACHE) {
-                // Load last 10000 events to ensure we capture events with same timestamp as checkpoint
-                int startIndex = Math.max(0, lines.size() - 10000);
-                processedEventIds.addAll(lines.subList(startIndex, lines.size()));
-                logger.info("Loaded {} recent processed event IDs from file (file too large): {}", 
-                    processedEventIds.size(), trackingFilePath);
-            } else {
-                processedEventIds.addAll(lines);
-                logger.info("Loaded {} processed event IDs from file: {}", 
-                    processedEventIds.size(), trackingFilePath);
-            }
-        } catch (IOException e) {
-            logger.warn("Could not load processed events from file: {}", e.getMessage());
-        }
-    }
-
-    private void loadCheckpointFromFile() {
-        Path filePath = Paths.get(checkpointFilePath);
-        if (!Files.exists(filePath)) {
-            logger.info("No checkpoint file found. Starting from epoch.");
-            return;
-        }
-        
-        try {
-            List<String> lines = Files.readAllLines(filePath);
-            if (!lines.isEmpty()) {
-                lastProcessedTimestamp = lines.get(0).trim();
-                logger.info("Loaded checkpoint timestamp: {}", lastProcessedTimestamp);
-            }
-        } catch (IOException e) {
-            logger.warn("Could not load checkpoint from file: {}", e.getMessage());
-        }
-    }
-
-    private void saveProcessedEventToFile(String eventId) {
-        try {
-            Files.write(Paths.get(trackingFilePath), 
-                (eventId + System.lineSeparator()).getBytes(),
-                StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-        } catch (IOException e) {
-            logger.error("Error saving processed event to file: {}", e.getMessage());
-        }
-    }
-
-    private void saveCheckpointToFile(String timestamp) {
-        try {
-            Files.write(Paths.get(checkpointFilePath), 
-                timestamp.getBytes(),
-                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-        } catch (IOException e) {
-            logger.error("Error saving checkpoint to file: {}", e.getMessage());
-        }
-    }
 
     public void start() {
         if (running) {
@@ -130,8 +63,8 @@ public class ReadOnlyEventConsumer {
         
         running = true;
         logger.info("Starting read-only event consumer for source index: {}", sourceIndexName);
-        logger.info("Tracking file: {}", trackingFilePath);
-        logger.info("Checkpoint file: {}", checkpointFilePath);
+        logger.info("Consumer ID: {}", consumerId);
+        logger.info("Using Elasticsearch offset management (Kubernetes-safe)");
         
         Thread consumerThread = new Thread(this::consumeEvents);
         consumerThread.setName("ReadOnlyEventConsumer-" + sourceIndexName);
@@ -147,40 +80,33 @@ public class ReadOnlyEventConsumer {
     private void consumeEvents() {
         while (running) {
             try {
+                // Mark the start of query execution to prevent missing events during long queries
+                offsetManager.markQueryExecutionStart(consumerId, sourceIndexName);
+                
                 List<Event> events = fetchUnprocessedEvents();
                 
                 if (!events.isEmpty()) {
                     logger.info("Fetched {} unprocessed events", events.size());
                     
                     for (Event event : events) {
-                        if (!isEventAlreadyProcessed(event.getId())) {
-                            processEvent(event);
-                            recordEventAsProcessed(event);
-                            
-                            long count = processedCount.incrementAndGet();
-                            if (count % 50 == 0) {
-                                logger.info("Processed {} events", count);
-                            }
-                            
-                            // Update checkpoint
-                            lastProcessedTimestamp = event.getTimestamp();
-                            if (count % 10 == 0) { // Save checkpoint every 10 events
-                                saveCheckpointToFile(lastProcessedTimestamp);
-                            }
-                        } else {
-                            logger.debug("Skipping duplicate event: {}", event.getId());
+                        processEvent(event);
+                        
+                        long count = processedCount.incrementAndGet();
+                        if (count % 50 == 0) {
+                            logger.info("Processed {} events", count);
                         }
+                        
+                        // Update offset in Elasticsearch - this handles deduplication
+                        offsetManager.updateOffset(consumerId, sourceIndexName, 
+                            event.getTimestamp(), event.getId());
                     }
+                    
+                    // Clear query execution start timestamp after successful processing
+                    offsetManager.clearQueryExecutionStart(consumerId, sourceIndexName);
                 } else {
                     logger.debug("No new events found");
-                }
-                
-                // Manage memory usage
-                if (processedEventIds.size() > MAX_MEMORY_CACHE) {
-                    logger.info("Memory cache size exceeded. Clearing cache and relying on file persistence.");
-                    processedEventIds.clear();
-                    // Reload recent events to avoid immediate duplicates
-                    loadRecentProcessedEvents();
+                    // Clear query execution start even when no events found
+                    offsetManager.clearQueryExecutionStart(consumerId, sourceIndexName);
                 }
                 
                 Thread.sleep(POLL_INTERVAL_MS);
@@ -191,6 +117,7 @@ public class ReadOnlyEventConsumer {
                 break;
             } catch (Exception e) {
                 logger.error("Error consuming events", e);
+                // Don't clear query execution start on error - keep the protection
                 try {
                     Thread.sleep(5000); // Wait before retrying
                 } catch (InterruptedException ie) {
@@ -200,54 +127,57 @@ public class ReadOnlyEventConsumer {
             }
         }
         
-        // Save final checkpoint
-        saveCheckpointToFile(lastProcessedTimestamp);
         logger.info("Read-only event consumer stopped. Total events processed: {}", processedCount.get());
     }
 
-    private void loadRecentProcessedEvents() {
-        try {
-            Path filePath = Paths.get(trackingFilePath);
-            if (!Files.exists(filePath)) return;
-            
-            List<String> lines = Files.readAllLines(filePath);
-            // Load events from the same timestamp as lastProcessedTimestamp and recent ones
-            // to ensure we don't re-process events with the same timestamp
-            
-            // If we have a timestamp, load all events with that timestamp plus recent ones
-            if (lastProcessedTimestamp != null && !lastProcessedTimestamp.equals("1970-01-01T00:00:00Z")) {
-                // Load last 10000 events to ensure we capture all events with same timestamp
-                int startIndex = Math.max(0, lines.size() - 10000);
-                processedEventIds.addAll(lines.subList(startIndex, lines.size()));
-            } else {
-                // Load only the last 5000 processed events to manage memory
-                int startIndex = Math.max(0, lines.size() - 5000);
-                processedEventIds.addAll(lines.subList(startIndex, lines.size()));
-            }
-            
-            logger.info("Reloaded {} recent processed event IDs", processedEventIds.size());
-        } catch (IOException e) {
-            logger.warn("Could not reload recent processed events: {}", e.getMessage());
-        }
-    }
 
     private List<Event> fetchUnprocessedEvents() {
         try {
-            // Query for events newer than or equal to the last processed timestamp
-            // Use gte instead of gt to handle cases where multiple events have same timestamp
-            SearchRequest searchRequest = SearchRequest.of(s -> s
-                .index(sourceIndexName)
-                .query(Query.of(q -> q.range(r -> r.field("timestamp")
-                    .gte(co.elastic.clients.json.JsonData.of(lastProcessedTimestamp)))))
-                .sort(so -> so.field(f -> f.field("timestamp").order(SortOrder.Asc)))
-                .size(BATCH_SIZE)
-            );
+            // Get offset record to determine exactly where to resume
+            OffsetRecord offsetRecord = offsetManager.loadOffset(consumerId, sourceIndexName);
+            String lastTimestamp = offsetRecord.getLastProcessedTimestamp();
+            String lastDocId = offsetRecord.getLastProcessedDocId();
+            
+            SearchRequest searchRequest;
+            
+            if (lastDocId != null && !lastDocId.isEmpty()) {
+                // We have a last processed document - use compound query to get events after this specific point
+                // This prevents duplicates by using both timestamp and document ID for precise positioning
+                searchRequest = SearchRequest.of(s -> s
+                    .index(sourceIndexName)
+                    .query(Query.of(q -> q.bool(b -> b
+                        .should(should -> should.range(r -> r.field("timestamp")
+                            .gt(co.elastic.clients.json.JsonData.of(lastTimestamp))))
+                        .should(should -> should.bool(b2 -> b2
+                            .must(must -> must.term(t -> t.field("timestamp").value(lastTimestamp)))
+                            .must(must -> must.range(r -> r.field("queryid")
+                                .gt(co.elastic.clients.json.JsonData.of(lastDocId))))
+                        ))
+                        .minimumShouldMatch("1")
+                    )))
+                    .sort(so -> so.field(f -> f.field("timestamp").order(SortOrder.Asc)))
+                    .sort(so -> so.field(f -> f.field("queryid").order(SortOrder.Asc)))
+                    .size(BATCH_SIZE)
+                );
+                logger.debug("Querying events after timestamp {} and docId {}", lastTimestamp, lastDocId);
+            } else {
+                // First run or no previous document - start from timestamp
+                searchRequest = SearchRequest.of(s -> s
+                    .index(sourceIndexName)
+                    .query(Query.of(q -> q.range(r -> r.field("timestamp")
+                        .gte(co.elastic.clients.json.JsonData.of(lastTimestamp)))))
+                    .sort(so -> so.field(f -> f.field("timestamp").order(SortOrder.Asc)))
+                    .sort(so -> so.field(f -> f.field("queryid").order(SortOrder.Asc)))
+                    .size(BATCH_SIZE)
+                );
+                logger.debug("First run - querying events from timestamp {}", lastTimestamp);
+            }
 
             SearchResponse<Event> response = client.search(searchRequest, Event.class);
             
             return response.hits().hits().stream()
                 .map(Hit::source)
-                .filter(event -> event != null && !processedEventIds.contains(event.getId()))
+                .filter(event -> event != null)
                 .collect(Collectors.toList());
                 
         } catch (Exception e) {
@@ -276,43 +206,12 @@ public class ReadOnlyEventConsumer {
         }
     }
 
-    private boolean isEventAlreadyProcessed(String eventId) {
-        // First check memory cache
-        if (processedEventIds.contains(eventId)) {
-            return true;
-        }
-        
-        // If not in memory cache, check the file directly (slower but accurate)
-        // This is especially important when memory cache is cleared or at startup
-        return isEventInFile(eventId);
-    }
-    
-    private boolean isEventInFile(String eventId) {
-        Path filePath = Paths.get(trackingFilePath);
-        if (!Files.exists(filePath)) {
-            return false;
-        }
-        
-        try {
-            // Use efficient line-by-line reading to avoid loading entire file
-            return Files.lines(filePath)
-                .anyMatch(line -> line.trim().equals(eventId));
-        } catch (IOException e) {
-            logger.warn("Error checking if event exists in file: {}", e.getMessage());
-            return false; // If we can't check, assume it's not processed to avoid skipping
-        }
-    }
-
-    private void recordEventAsProcessed(Event event) {
-        processedEventIds.add(event.getId());
-        saveProcessedEventToFile(event.getId());
-        logger.debug("Recorded event as processed in file: {}", event.getId());
-    }
 
     public void close() {
         stop();
-        // Save final checkpoint
-        saveCheckpointToFile(lastProcessedTimestamp);
+        if (offsetManager != null) {
+            offsetManager.close();
+        }
         ElasticsearchConfig.closeClient(client);
     }
 
@@ -324,20 +223,22 @@ public class ReadOnlyEventConsumer {
         return running;
     }
 
-    public int getProcessedEventsCacheSize() {
-        return processedEventIds.size();
+    public String getConsumerId() {
+        return consumerId;
     }
-
-    public String getTrackingFilePath() {
-        return trackingFilePath;
-    }
-
-    public String getCheckpointFilePath() {
-        return checkpointFilePath;
+    
+    public String getSourceIndexName() {
+        return sourceIndexName;
     }
 
     public String getLastProcessedTimestamp() {
-        return lastProcessedTimestamp;
+        OffsetRecord offset = offsetManager.loadOffset(consumerId, sourceIndexName);
+        return offset.getLastProcessedTimestamp();
+    }
+    
+    public String getLastProcessedDocId() {
+        OffsetRecord offset = offsetManager.loadOffset(consumerId, sourceIndexName);
+        return offset.getLastProcessedDocId();
     }
     
     /**
@@ -353,10 +254,10 @@ public class ReadOnlyEventConsumer {
             consumer = new ReadOnlyEventConsumer(indexName);
             
             logger.info("Consumer initialized:");
-            logger.info("- Tracking file: {}", consumer.getTrackingFilePath());
-            logger.info("- Checkpoint file: {}", consumer.getCheckpointFilePath());
+            logger.info("- Consumer ID: {}", consumer.getConsumerId());
+            logger.info("- Source Index: {}", consumer.getSourceIndexName());
             logger.info("- Last processed timestamp: {}", consumer.getLastProcessedTimestamp());
-            logger.info("- Cached processed events: {}", consumer.getProcessedEventsCacheSize());
+            logger.info("- Last processed document ID: {}", consumer.getLastProcessedDocId());
             
             consumer.start();
             
