@@ -141,13 +141,13 @@ public class ReadOnlyEventConsumer {
                             .gt(co.elastic.clients.json.JsonData.of(lastTimestamp))))
                         .should(should -> should.bool(b2 -> b2
                             .must(must -> must.term(t -> t.field("timestamp").value(lastTimestamp)))
-                            .must(must -> must.range(r -> r.field("_id")
+                            .must(must -> must.range(r -> r.field("queryid")
                                 .gt(co.elastic.clients.json.JsonData.of(lastDocId))))
                         ))
                         .minimumShouldMatch("1")
                     )))
                     .sort(so -> so.field(f -> f.field("timestamp").order(SortOrder.Asc)))
-                    .sort(so -> so.field(f -> f.field("_id").order(SortOrder.Asc)))
+                    .sort(so -> so.field(f -> f.field("queryid").order(SortOrder.Asc)))
                     .size(BATCH_SIZE)
                 );
                 logger.debug("Querying events after timestamp {} and docId {}", lastTimestamp, lastDocId);
@@ -158,7 +158,7 @@ public class ReadOnlyEventConsumer {
                     .query(Query.of(q -> q.range(r -> r.field("timestamp")
                         .gte(co.elastic.clients.json.JsonData.of(lastTimestamp)))))
                     .sort(so -> so.field(f -> f.field("timestamp").order(SortOrder.Asc)))
-                    .sort(so -> so.field(f -> f.field("_id").order(SortOrder.Asc)))
+                    .sort(so -> so.field(f -> f.field("queryid").order(SortOrder.Asc)))
                     .size(BATCH_SIZE)
                 );
                 logger.debug("First run - querying events from timestamp {}", lastTimestamp);
