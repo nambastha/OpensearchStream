@@ -1,0 +1,173 @@
+<mxfile host="drawio-offline" modified="2024-01-01T00:00:00.000Z" agent="Mozilla/5.0" etag="abc123" version="22.1.11" type="device">
+  <diagram name="High-Level Architecture" id="page1">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        
+        <mxCell id="container-env" value="Container Environment (Kubernetes/Docker)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1F5FE;strokeColor=#0277BD;fontSize=14;fontStyle=1;verticalAlign=top;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="50" y="50" width="450" height="300" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="pod1" value="Pod 1&lt;br&gt;Consumer Group A&lt;br&gt;event-processor-v1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#4CAF50;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="70" y="90" width="120" height="60" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="pod2" value="Pod 2&lt;br&gt;Consumer Group B&lt;br&gt;analytics-processor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#4CAF50;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="210" y="90" width="120" height="60" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="pod3" value="Pod 3&lt;br&gt;Consumer Group A&lt;br&gt;event-processor-v1&lt;br&gt;(Replica)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#4CAF50;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="350" y="90" width="120" height="60" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="producer" value="Producer Pod&lt;br&gt;Event Producer&lt;br&gt;Continuous Generation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#FF9800;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="70" y="190" width="120" height="60" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="opensearch-cluster" value="OpenSearch Cluster" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;fontSize=14;fontStyle=1;verticalAlign=top;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="550" y="50" width="300" height="300" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="events-index" value="Events Index&lt;br&gt;• Event Documents&lt;br&gt;• _seq_no: 1,2,3...&lt;br&gt;• _primary_term&lt;br&gt;• processed: false/true" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8EAF6;strokeColor=#3F51B5;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="570" y="90" width="120" height="100" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="offsets-index" value="Consumer-Offsets Index&lt;br&gt;• Consumer Group ID&lt;br&gt;• Last Processed seq_no&lt;br&gt;• Primary Term&lt;br&gt;• Timestamp" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8EAF6;strokeColor=#3F51B5;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="710" y="90" width="120" height="100" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="arrow1" value="Produces Events" style="endArrow=classic;html=1;strokeWidth=2;strokeColor=#FF5722;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="190" y="220" as="sourcePoint"/>
+            <mxPoint x="570" y="140" as="targetPoint"/>
+            <Array as="points">
+              <mxPoint x="380" y="220"/>
+              <mxPoint x="380" y="140"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="arrow2" value="Reads Events WHERE&lt;br&gt;_seq_no &gt; last_offset" style="endArrow=classic;html=1;strokeWidth=2;strokeColor=#4CAF50;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="190" y="110" as="sourcePoint"/>
+            <mxPoint x="570" y="120" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="arrow3" value="Commits Offset&lt;br&gt;Atomically" style="endArrow=classic;html=1;strokeWidth=2;strokeColor=#2196F3;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="330" y="120" as="sourcePoint"/>
+            <mxPoint x="710" y="130" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="arrow4" value="On Startup&lt;br&gt;Load Last Offset" style="endArrow=classic;html=1;strokeWidth=2;strokeColor=#E91E63;strokeColor=#E91E63;dashed=1;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="470" y="130" as="sourcePoint"/>
+            <mxPoint x="710" y="150" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+      </root>
+    </mxGraphModel>
+  </diagram>
+  
+  <diagram name="Component Architecture" id="page2">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        
+        <mxCell id="consumer-main" value="ImprovedEventConsumer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#F57C00;fontSize=16;fontStyle=1;verticalAlign=top;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="50" y="50" width="350" height="300" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="event-consumer" value="EventConsumer&lt;br&gt;Main Processing Loop" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1976D2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="70" y="90" width="100" height="50" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="offset-manager" value="OffsetManager&lt;br&gt;Persistent Storage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1976D2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="190" y="90" width="100" height="50" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="consumer-offset" value="ConsumerOffset&lt;br&gt;State Model" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1976D2;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="310" y="90" width="80" height="50" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="step1" value="1. Load Last Offset" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C5E1A5;strokeColor=#689F38;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="70" y="170" width="100" height="30" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="step2" value="2. Fetch Unprocessed Events&lt;br&gt;WHERE _seq_no &gt; last_offset" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C5E1A5;strokeColor=#689F38;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="70" y="210" width="140" height="40" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="step3" value="3. Process Event Batch" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C5E1A5;strokeColor=#689F38;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="70" y="260" width="100" height="30" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="step4" value="4. Update Event Status&lt;br&gt;processed = true" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C5E1A5;strokeColor=#689F38;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="190" y="260" width="100" height="40" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="step5" value="5. Commit New Offset&lt;br&gt;Atomic Operation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C5E1A5;strokeColor=#689F38;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="310" y="260" width="80" height="40" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="opensearch-storage" value="OpenSearch Storage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;fontSize=16;fontStyle=1;verticalAlign=top;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="450" y="50" width="400" height="300" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="event-doc1" value="Event Doc 1&lt;br&gt;_seq_no: 1001&lt;br&gt;_primary_term: 1&lt;br&gt;processed: true" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8BBD9;strokeColor=#E91E63;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="470" y="90" width="80" height="60" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="event-doc2" value="Event Doc 2&lt;br&gt;_seq_no: 1002&lt;br&gt;_primary_term: 1&lt;br&gt;processed: true" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8BBD9;strokeColor=#E91E63;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="560" y="90" width="80" height="60" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="event-doc3" value="Event Doc 3&lt;br&gt;_seq_no: 1003&lt;br&gt;_primary_term: 1&lt;br&gt;processed: false" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCDD2;strokeColor=#F44336;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="650" y="90" width="80" height="60" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="offset1" value="Group A Offset&lt;br&gt;lastSeqNo: 1002&lt;br&gt;lastPrimaryTerm: 1&lt;br&gt;timestamp: 2024-01-01T10:30:00Z" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B39DDB;strokeColor=#673AB7;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="470" y="180" width="110" height="70" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="offset2" value="Group B Offset&lt;br&gt;lastSeqNo: 1001&lt;br&gt;lastPrimaryTerm: 1&lt;br&gt;timestamp: 2024-01-01T10:29:00Z" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B39DDB;strokeColor=#673AB7;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="600" y="180" width="110" height="70" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="flow-arrow1" value="" style="endArrow=classic;html=1;strokeWidth=1;strokeColor=#333;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="120" y="200" as="sourcePoint"/>
+            <mxPoint x="120" y="210" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="flow-arrow2" value="" style="endArrow=classic;html=1;strokeWidth=1;strokeColor=#333;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="120" y="250" as="sourcePoint"/>
+            <mxPoint x="120" y="260" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="connect1" value="" style="endArrow=classic;html=1;strokeWidth=1;strokeColor=#666;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="170" y="185" as="sourcePoint"/>
+            <mxPoint x="470" y="215" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="connect2" value="" style="endArrow=classic;html=1;strokeWidth=1;strokeColor=#666;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="210" y="230" as="sourcePoint"/>
+            <mxPoint x="470" y="120" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

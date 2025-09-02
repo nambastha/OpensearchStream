@@ -66,9 +66,19 @@ public class ReadOnlyEventConsumer {
         
         try {
             List<String> lines = Files.readAllLines(filePath);
-            processedEventIds.addAll(lines);
-            logger.info("Loaded {} processed event IDs from file: {}", 
-                processedEventIds.size(), trackingFilePath);
+            
+            // If file is large, only load recent events to manage memory at startup
+            if (lines.size() > MAX_MEMORY_CACHE) {
+                // Load last 10000 events to ensure we capture events with same timestamp as checkpoint
+                int startIndex = Math.max(0, lines.size() - 10000);
+                processedEventIds.addAll(lines.subList(startIndex, lines.size()));
+                logger.info("Loaded {} recent processed event IDs from file (file too large): {}", 
+                    processedEventIds.size(), trackingFilePath);
+            } else {
+                processedEventIds.addAll(lines);
+                logger.info("Loaded {} processed event IDs from file: {}", 
+                    processedEventIds.size(), trackingFilePath);
+            }
         } catch (IOException e) {
             logger.warn("Could not load processed events from file: {}", e.getMessage());
         }
@@ -143,7 +153,7 @@ public class ReadOnlyEventConsumer {
                     logger.info("Fetched {} unprocessed events", events.size());
                     
                     for (Event event : events) {
-                        if (!processedEventIds.contains(event.getId())) {
+                        if (!isEventAlreadyProcessed(event.getId())) {
                             processEvent(event);
                             recordEventAsProcessed(event);
                             
@@ -201,9 +211,19 @@ public class ReadOnlyEventConsumer {
             if (!Files.exists(filePath)) return;
             
             List<String> lines = Files.readAllLines(filePath);
-            // Load only the last 5000 processed events to manage memory
-            int startIndex = Math.max(0, lines.size() - 5000);
-            processedEventIds.addAll(lines.subList(startIndex, lines.size()));
+            // Load events from the same timestamp as lastProcessedTimestamp and recent ones
+            // to ensure we don't re-process events with the same timestamp
+            
+            // If we have a timestamp, load all events with that timestamp plus recent ones
+            if (lastProcessedTimestamp != null && !lastProcessedTimestamp.equals("1970-01-01T00:00:00Z")) {
+                // Load last 10000 events to ensure we capture all events with same timestamp
+                int startIndex = Math.max(0, lines.size() - 10000);
+                processedEventIds.addAll(lines.subList(startIndex, lines.size()));
+            } else {
+                // Load only the last 5000 processed events to manage memory
+                int startIndex = Math.max(0, lines.size() - 5000);
+                processedEventIds.addAll(lines.subList(startIndex, lines.size()));
+            }
             
             logger.info("Reloaded {} recent processed event IDs", processedEventIds.size());
         } catch (IOException e) {
@@ -213,11 +233,12 @@ public class ReadOnlyEventConsumer {
 
     private List<Event> fetchUnprocessedEvents() {
         try {
-            // Query for events newer than the last processed timestamp
+            // Query for events newer than or equal to the last processed timestamp
+            // Use gte instead of gt to handle cases where multiple events have same timestamp
             SearchRequest searchRequest = SearchRequest.of(s -> s
                 .index(sourceIndexName)
                 .query(Query.of(q -> q.range(r -> r.field("timestamp")
-                    .gt(co.elastic.clients.json.JsonData.of(lastProcessedTimestamp)))))
+                    .gte(co.elastic.clients.json.JsonData.of(lastProcessedTimestamp)))))
                 .sort(so -> so.field(f -> f.field("timestamp").order(SortOrder.Asc)))
                 .size(BATCH_SIZE)
             );
@@ -252,6 +273,33 @@ public class ReadOnlyEventConsumer {
         } catch (Exception e) {
             logger.error("Error processing event: {}", event.getId(), e);
             throw new RuntimeException("Failed to process event", e);
+        }
+    }
+
+    private boolean isEventAlreadyProcessed(String eventId) {
+        // First check memory cache
+        if (processedEventIds.contains(eventId)) {
+            return true;
+        }
+        
+        // If not in memory cache, check the file directly (slower but accurate)
+        // This is especially important when memory cache is cleared or at startup
+        return isEventInFile(eventId);
+    }
+    
+    private boolean isEventInFile(String eventId) {
+        Path filePath = Paths.get(trackingFilePath);
+        if (!Files.exists(filePath)) {
+            return false;
+        }
+        
+        try {
+            // Use efficient line-by-line reading to avoid loading entire file
+            return Files.lines(filePath)
+                .anyMatch(line -> line.trim().equals(eventId));
+        } catch (IOException e) {
+            logger.warn("Error checking if event exists in file: {}", e.getMessage());
+            return false; // If we can't check, assume it's not processed to avoid skipping
         }
     }
 
