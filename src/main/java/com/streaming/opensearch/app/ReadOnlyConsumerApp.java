@@ -7,9 +7,10 @@ import org.slf4j.LoggerFactory;
 import java.util.Scanner;
 
 /**
- * Read-Only Consumer Application
- * Uses local file persistence to prevent duplicates without writing to OpenSearch at all
- * Perfect for highly constrained environments where no OpenSearch writes are allowed
+ * Production-Ready Read-Only Consumer Application
+ * Uses batched Elasticsearch offset management (Kubernetes-safe)
+ * Handles 500K+ messages daily with optimal performance
+ * Perfect for highly constrained environments where no source index writes are allowed
  */
 public class ReadOnlyConsumerApp {
     private static final Logger logger = LoggerFactory.getLogger(ReadOnlyConsumerApp.class);
@@ -40,11 +41,12 @@ public class ReadOnlyConsumerApp {
             startMonitoringThread(consumer);
             
             // Wait for user input to stop
-            logger.info("Read-only consumer started successfully!");
-            logger.info("Source Index: {}", indexName);
-            logger.info("Tracking File: {}", consumer.getTrackingFilePath());
-            logger.info("Checkpoint File: {}", consumer.getCheckpointFilePath());
-            logger.info("Last Processed: {}", consumer.getLastProcessedTimestamp());
+            logger.info("Production-ready read-only consumer started successfully!");
+            logger.info("- Source Index: {}", indexName);
+            logger.info("- Consumer ID: {}", consumer.getConsumerId());
+            logger.info("- Last Processed Timestamp: {}", consumer.getLastProcessedTimestamp());
+            logger.info("- Last Processed Document: {}", consumer.getLastProcessedDocId());
+            logger.info("- Batch commit: 100 events OR 30 seconds");
             logger.info("Press 'q' and Enter to quit, 's' and Enter for status, 'h' for help");
             
             try (Scanner scanner = new Scanner(System.in)) {
@@ -95,21 +97,23 @@ public class ReadOnlyConsumerApp {
     }
     
     private static void printStatus(ReadOnlyEventConsumer consumer) {
-        logger.info("=== READ-ONLY CONSUMER STATUS ===");
-        logger.info("Running: {}, Events Processed: {}, Cache Size: {}", 
-            consumer.isRunning(), consumer.getProcessedCount(), consumer.getProcessedEventsCacheSize());
-        logger.info("Source Index: {}", consumer.getTrackingFilePath().replace("processed_events_", "").replace(".txt", ""));
-        logger.info("Tracking File: {}", consumer.getTrackingFilePath());
-        logger.info("Checkpoint File: {}", consumer.getCheckpointFilePath());
-        logger.info("Last Processed: {}", consumer.getLastProcessedTimestamp());
-        logger.info("=================================");
+        logger.info("=== PRODUCTION CONSUMER STATUS ===");
+        logger.info("Running: {}", consumer.isRunning());
+        logger.info("Total Events Processed: {}", consumer.getProcessedCount());
+        logger.info("Events Since Last Commit: {}", consumer.getEventsSinceLastCommit());
+        logger.info("Time Since Last Commit: {} ms", consumer.getTimeSinceLastCommit());
+        logger.info("Source Index: {}", consumer.getSourceIndexName());
+        logger.info("Consumer ID: {}", consumer.getConsumerId());
+        logger.info("Last Processed Timestamp: {}", consumer.getLastProcessedTimestamp());
+        logger.info("Last Processed Document: {}", consumer.getLastProcessedDocId());
+        logger.info("===================================");
     }
     
     private static void printHelp() {
-        logger.info("=== READ-ONLY CONSUMER COMMANDS ===");
-        logger.info("q, quit - Quit the consumer");
-        logger.info("s, status - Show current status");
+        logger.info("=== PRODUCTION CONSUMER COMMANDS ===");
+        logger.info("q, quit - Gracefully quit the consumer (commits final offset)");
+        logger.info("s, status - Show current status and performance metrics");
         logger.info("h, help - Show this help message");
-        logger.info("===================================");
+        logger.info("=====================================");
     }
 }
