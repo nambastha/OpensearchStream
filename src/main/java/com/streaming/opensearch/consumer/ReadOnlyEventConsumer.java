@@ -25,6 +25,7 @@ import java.util.stream.Collectors;
  * Production-ready read-only consumer with batched offset management
  * - Handles 500K+ messages daily with optimal Elasticsearch usage
  * - Batched offset commits (every 100 events OR 30 seconds)
+ * - Filters only documents with _id starting with 'completion_'
  * - Kubernetes-safe with no local file dependencies
  * - Prevents message reprocessing after pod restarts
  * - Graceful shutdown with final offset commit
@@ -286,26 +287,28 @@ public class ReadOnlyEventConsumer {
             SearchRequest searchRequest;
             
             if (lastDocId != null && !lastDocId.isEmpty()) {
-                // Use simple range query for better ES compatibility - start after last processed timestamp
+                // Use range query with _id prefix filter
                 searchRequest = SearchRequest.of(s -> s
                     .index(sourceIndexName)
-                    .query(Query.of(q -> q.range(r -> r.field("timestamp")
-                        .gt(co.elastic.clients.json.JsonData.of(lastTimestamp)))))
+                    .query(Query.of(q -> q.bool(b -> b
+                        .must(m -> m.range(r -> r.field("timestamp")
+                            .gt(co.elastic.clients.json.JsonData.of(lastTimestamp))))
+                        .must(m -> m.prefix(p -> p.field("_id").value("completion_")))
+                    )))
                     .sort(so -> so.field(f -> f.field("timestamp").order(SortOrder.Asc)))
                     .sort(so -> so.field(f -> f.field("queryid").order(SortOrder.Asc)))
                     .size(BATCH_SIZE)
                 );
-                logger.debug("Querying events after timestamp {} and docId {}", lastTimestamp, lastDocId);
+                logger.debug("Querying events with _id starting with 'completion_' after timestamp {} and docId {}", lastTimestamp, lastDocId);
             } else {
-                // First run - use match_all query for simplicity and reliability
+                // First run - only documents with _id starting with 'completion_'
                 searchRequest = SearchRequest.of(s -> s
                     .index(sourceIndexName)
-                    .query(Query.of(q -> q.matchAll(m -> m)))
+                    .query(Query.of(q -> q.prefix(p -> p.field("_id").value("completion_"))))
                     .sort(so -> so.field(f -> f.field("timestamp").order(SortOrder.Asc)))
-                    .sort(so -> so.field(f -> f.field("queryid").order(SortOrder.Asc)))
                     .size(BATCH_SIZE)
                 );
-                logger.debug("First run - querying all events (no previous offset)");
+                logger.debug("First run - querying only events with _id starting with 'completion_'");
             }
 
             SearchResponse<Event> response = client.search(searchRequest, Event.class);
