@@ -297,16 +297,15 @@ public class ReadOnlyEventConsumer {
                 );
                 logger.debug("Querying events after timestamp {} and docId {}", lastTimestamp, lastDocId);
             } else {
-                // First run or no previous document - start from timestamp
+                // First run - use match_all query for simplicity and reliability
                 searchRequest = SearchRequest.of(s -> s
                     .index(sourceIndexName)
-                    .query(Query.of(q -> q.range(r -> r.field("timestamp")
-                        .gte(co.elastic.clients.json.JsonData.of(lastTimestamp)))))
+                    .query(Query.of(q -> q.matchAll(m -> m)))
                     .sort(so -> so.field(f -> f.field("timestamp").order(SortOrder.Asc)))
                     .sort(so -> so.field(f -> f.field("queryid").order(SortOrder.Asc)))
                     .size(BATCH_SIZE)
                 );
-                logger.debug("First run - querying events from timestamp {}", lastTimestamp);
+                logger.debug("First run - querying all events (no previous offset)");
             }
 
             SearchResponse<Event> response = client.search(searchRequest, Event.class);
