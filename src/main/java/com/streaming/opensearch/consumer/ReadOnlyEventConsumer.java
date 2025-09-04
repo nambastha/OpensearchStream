@@ -25,6 +25,7 @@ import java.util.stream.Collectors;
  * Production-ready read-only consumer with batched offset management
  * - Handles 500K+ messages daily with optimal Elasticsearch usage
  * - Batched offset commits (every 100 events OR 30 seconds)
+ * - Filters only documents with _id starting with 'completion_'
  * - Kubernetes-safe with no local file dependencies
  * - Prevents message reprocessing after pod restarts
  * - Graceful shutdown with final offset commit
@@ -286,36 +287,28 @@ public class ReadOnlyEventConsumer {
             SearchRequest searchRequest;
             
             if (lastDocId != null && !lastDocId.isEmpty()) {
-                // We have a last processed document - use compound query to get events after this specific point
-                // This prevents duplicates by using both timestamp and document ID for precise positioning
+                // Use range query with _id prefix filter
                 searchRequest = SearchRequest.of(s -> s
                     .index(sourceIndexName)
                     .query(Query.of(q -> q.bool(b -> b
-                        .should(should -> should.range(r -> r.field("timestamp")
+                        .must(m -> m.range(r -> r.field("timestamp")
                             .gt(co.elastic.clients.json.JsonData.of(lastTimestamp))))
-                        .should(should -> should.bool(b2 -> b2
-                            .must(must -> must.term(t -> t.field("timestamp").value(lastTimestamp)))
-                            .must(must -> must.range(r -> r.field("queryid")
-                                .gt(co.elastic.clients.json.JsonData.of(lastDocId))))
-                        ))
-                        .minimumShouldMatch("1")
+                        .must(m -> m.wildcard(w -> w.field("_id").value("completion_*")))
                     )))
                     .sort(so -> so.field(f -> f.field("timestamp").order(SortOrder.Asc)))
                     .sort(so -> so.field(f -> f.field("queryid").order(SortOrder.Asc)))
                     .size(BATCH_SIZE)
                 );
-                logger.debug("Querying events after timestamp {} and docId {}", lastTimestamp, lastDocId);
+                logger.debug("Querying events with _id starting with 'completion_' after timestamp {} and docId {}", lastTimestamp, lastDocId);
             } else {
-                // First run or no previous document - start from timestamp
+                // First run - only documents with _id starting with 'completion_'
                 searchRequest = SearchRequest.of(s -> s
                     .index(sourceIndexName)
-                    .query(Query.of(q -> q.range(r -> r.field("timestamp")
-                        .gte(co.elastic.clients.json.JsonData.of(lastTimestamp)))))
+                    .query(Query.of(q -> q.wildcard(w -> w.field("_id").value("completion_*"))))
                     .sort(so -> so.field(f -> f.field("timestamp").order(SortOrder.Asc)))
-                    .sort(so -> so.field(f -> f.field("queryid").order(SortOrder.Asc)))
                     .size(BATCH_SIZE)
                 );
-                logger.debug("First run - querying events from timestamp {}", lastTimestamp);
+                logger.debug("First run - querying only events with _id starting with 'completion_'");
             }
 
             SearchResponse<Event> response = client.search(searchRequest, Event.class);
@@ -326,7 +319,17 @@ public class ReadOnlyEventConsumer {
                 .collect(Collectors.toList());
                 
         } catch (Exception e) {
-            logger.error("Error fetching unprocessed events", e);
+            logger.error("Error fetching unprocessed events from index '{}': {}", sourceIndexName, e.getMessage());
+            
+            // Check if it's an index not found error
+            if (e.getMessage() != null && e.getMessage().contains("index_not_found_exception")) {
+                logger.warn("Source index '{}' does not exist. Consumer will wait for index creation.", sourceIndexName);
+            } else if (e.getMessage() != null && e.getMessage().contains("no such index")) {
+                logger.warn("Source index '{}' does not exist. Consumer will wait for index creation.", sourceIndexName);
+            } else {
+                logger.error("Detailed error fetching events:", e);
+            }
+            
             return List.of();
         }
     }
