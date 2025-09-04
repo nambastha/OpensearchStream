@@ -293,7 +293,7 @@ public class ReadOnlyEventConsumer {
                     .query(Query.of(q -> q.bool(b -> b
                         .must(m -> m.range(r -> r.field("timestamp")
                             .gt(co.elastic.clients.json.JsonData.of(lastTimestamp))))
-                        .must(m -> m.prefix(p -> p.field("_id").value("completion_")))
+                        .must(m -> m.wildcard(w -> w.field("_id").value("completion_*")))
                     )))
                     .sort(so -> so.field(f -> f.field("timestamp").order(SortOrder.Asc)))
                     .sort(so -> so.field(f -> f.field("queryid").order(SortOrder.Asc)))
@@ -304,7 +304,7 @@ public class ReadOnlyEventConsumer {
                 // First run - only documents with _id starting with 'completion_'
                 searchRequest = SearchRequest.of(s -> s
                     .index(sourceIndexName)
-                    .query(Query.of(q -> q.prefix(p -> p.field("_id").value("completion_"))))
+                    .query(Query.of(q -> q.wildcard(w -> w.field("_id").value("completion_*"))))
                     .sort(so -> so.field(f -> f.field("timestamp").order(SortOrder.Asc)))
                     .size(BATCH_SIZE)
                 );

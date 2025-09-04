@@ -8,8 +8,8 @@ import java.util.Objects;
  * Event model class representing data to be stored in OpenSearch
  */
 public class Event {
-    @JsonProperty("id")
-    private String id;
+    @JsonProperty("queryid")
+    private String queryid;
     
     @JsonProperty("timestamp")
     private String timestamp;
